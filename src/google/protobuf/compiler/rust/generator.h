@@ -1,5 +1,5 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2008 Google Inc.  All rights reserved.
+// Copyright 2023 Google Inc.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,6 +31,7 @@
 #ifndef GOOGLE_PROTOBUF_COMPILER_RUST_GENERATOR_H__
 #define GOOGLE_PROTOBUF_COMPILER_RUST_GENERATOR_H__
 
+#include <cstdint>
 #include <string>
 
 #include "google/protobuf/compiler/code_generator.h"

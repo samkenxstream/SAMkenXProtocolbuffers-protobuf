@@ -1,5 +1,5 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2008 Google Inc.  All rights reserved.
+// Copyright 2023 Google Inc.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,8 +28,30 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-fn main() {
-    // This is currently just a smoke test checking that we can generate gencode, compile it, and
-    // link the test binary.
-    let _test_all_types: unittest_proto::TestAllTypes;
+use unittest_proto::proto2_unittest::TestAllTypes;
+
+#[test]
+fn test_optional_bool() {
+    let mut test_all_types: TestAllTypes = TestAllTypes::new();
+    test_all_types.optional_bool_set(Some(true));
+    assert_eq!(test_all_types.optional_bool(), Some(true));
+
+    test_all_types.optional_bool_set(Some(false));
+    assert_eq!(test_all_types.optional_bool(), Some(false));
+
+    test_all_types.optional_bool_set(None);
+    assert_eq!(test_all_types.optional_bool(), None);
+}
+
+#[test]
+fn test_optional_int64() {
+    let mut test_all_types: TestAllTypes = TestAllTypes::new();
+    test_all_types.optional_int64_set(Some(10));
+    assert_eq!(test_all_types.optional_int64(), Some(10));
+
+    test_all_types.optional_int64_set(Some(-10));
+    assert_eq!(test_all_types.optional_int64(), Some(-10));
+
+    test_all_types.optional_int64_set(None);
+    assert_eq!(test_all_types.optional_int64(), None);
 }

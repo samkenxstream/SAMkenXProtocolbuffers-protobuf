@@ -1,5 +1,5 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2008 Google Inc.  All rights reserved.
+// Copyright 2023 Google Inc.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,6 @@
 
 syntax = "proto2";
 
-package third_party_protobuf_rust_test;
+package parent_package;
 
 message Parent {}

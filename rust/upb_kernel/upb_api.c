@@ -1,5 +1,5 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2008 Google Inc.  All rights reserved.
+// Copyright 2023 Google Inc.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -27,27 +27,8 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
 
-#include "google/protobuf/compiler/allowlists/allowlists.h"
+#define UPB_BUILD_API
 
-#include "absl/strings/string_view.h"
-#include "google/protobuf/compiler/allowlists/allowlist.h"
-
-namespace google {
-namespace protobuf {
-namespace compiler {
-
-// NOTE: Allowlists in this file are not accepting new entries unless otherwise
-// specified.
-
-static constexpr auto kWeakImports = internal::MakeAllowlist({
-// Intentionally left blank.
-});
-
-bool IsWeakImportFile(absl::string_view filename) {
-  return kWeakImports.Allows(filename);
-}
-
-}  // namespace compiler
-}  // namespace protobuf
-}  // namespace google
+#include "upb/mem/arena.h" // IWYU pragma: keep

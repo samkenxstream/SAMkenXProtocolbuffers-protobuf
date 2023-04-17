@@ -122,6 +122,7 @@
 #include "absl/base/call_once.h"
 #include "absl/base/casts.h"
 #include "absl/functional/function_ref.h"
+#include "absl/strings/cord.h"
 #include "absl/strings/string_view.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/generated_message_reflection.h"
@@ -130,7 +131,6 @@
 #include "google/protobuf/map.h"  // TODO(b/211442718): cleanup
 #include "google/protobuf/message_lite.h"
 #include "google/protobuf/port.h"
-
 
 // Must be included last.
 #include "google/protobuf/port_def.inc"
@@ -630,6 +630,12 @@ class PROTOBUF_EXPORT Reflection final {
                                         const FieldDescriptor* field,
                                         std::string* scratch) const;
 
+  // Returns a Cord containing the value of the string field.  If the
+  // underlying field is stored as a cord (e.g. it has the [ctype=CORD]
+  // option), this involves no copies (just reference counting).  If the
+  // underlying representation is not a Cord, a copy will have to be made.
+  absl::Cord GetCord(const Message& message,
+                     const FieldDescriptor* field) const;
 
 
   // Singular field mutators -----------------------------------------
@@ -651,6 +657,11 @@ class PROTOBUF_EXPORT Reflection final {
                bool value) const;
   void SetString(Message* message, const FieldDescriptor* field,
                  std::string value) const;
+  // Set a string field to a Cord value.  If the underlying field is
+  // represented using a Cord already, this involves no copies  (just
+  // reference counting).  Otherwise, a copy must be made.
+  void SetString(Message* message, const FieldDescriptor* field,
+                 const absl::Cord& value) const;
   void SetEnum(Message* message, const FieldDescriptor* field,
                const EnumValueDescriptor* value) const;
   // Set an enum field's value with an integer rather than EnumValueDescriptor.
@@ -1080,7 +1091,7 @@ class PROTOBUF_EXPORT Reflection final {
   }
 
   const TcParseTableBase* CreateTcParseTable() const;
-  const TcParseTableBase* CreateTcParseTableForMessageSet() const;
+  const TcParseTableBase* CreateTcParseTableReflectionOnly() const;
   void PopulateTcParseFastEntries(
       const internal::TailCallTableInfo& table_info,
       TcParseTableBase::FastFieldEntry* fast_entries) const;
@@ -1191,8 +1202,8 @@ class PROTOBUF_EXPORT Reflection final {
 
   inline const uint32_t* GetHasBits(const Message& message) const;
   inline uint32_t* MutableHasBits(Message* message) const;
-  inline uint32_t GetOneofCase(const Message& message,
-                               const OneofDescriptor* oneof_descriptor) const;
+  uint32_t GetOneofCase(const Message& message,
+                        const OneofDescriptor* oneof_descriptor) const;
   inline uint32_t* MutableOneofCase(
       Message* message, const OneofDescriptor* oneof_descriptor) const;
   inline bool HasExtensionSet(const Message& /* message */) const {
@@ -1525,13 +1536,6 @@ inline RepeatedPtrField<PB>* Reflection::MutableRepeatedPtrFieldInternal(
 template <typename Type>
 const Type& Reflection::DefaultRaw(const FieldDescriptor* field) const {
   return *reinterpret_cast<const Type*>(schema_.GetFieldDefault(field));
-}
-
-uint32_t Reflection::GetOneofCase(
-    const Message& message, const OneofDescriptor* oneof_descriptor) const {
-  ABSL_DCHECK(!oneof_descriptor->is_synthetic());
-  return internal::GetConstRefAtOffset<uint32_t>(
-      message, schema_.GetOneofCaseOffset(oneof_descriptor));
 }
 
 bool Reflection::HasOneofField(const Message& message,

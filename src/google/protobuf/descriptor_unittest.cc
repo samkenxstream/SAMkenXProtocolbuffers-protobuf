@@ -48,6 +48,7 @@
 #include "absl/log/scoped_mock_log.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
+#include "google/protobuf/descriptor_legacy.h"
 #include "google/protobuf/unittest.pb.h"
 #include "google/protobuf/unittest_custom_options.pb.h"
 #include "google/protobuf/stubs/common.h"
@@ -215,90 +216,18 @@ class MockErrorCollector : public DescriptorPool::ErrorCollector {
   void RecordError(absl::string_view filename, absl::string_view element_name,
                    const Message* descriptor, ErrorLocation location,
                    absl::string_view message) override {
-    const char* location_name = nullptr;
-    switch (location) {
-      case NAME:
-        location_name = "NAME";
-        break;
-      case NUMBER:
-        location_name = "NUMBER";
-        break;
-      case TYPE:
-        location_name = "TYPE";
-        break;
-      case EXTENDEE:
-        location_name = "EXTENDEE";
-        break;
-      case DEFAULT_VALUE:
-        location_name = "DEFAULT_VALUE";
-        break;
-      case OPTION_NAME:
-        location_name = "OPTION_NAME";
-        break;
-      case OPTION_VALUE:
-        location_name = "OPTION_VALUE";
-        break;
-      case INPUT_TYPE:
-        location_name = "INPUT_TYPE";
-        break;
-      case OUTPUT_TYPE:
-        location_name = "OUTPUT_TYPE";
-        break;
-      case IMPORT:
-        location_name = "IMPORT";
-        break;
-      case OTHER:
-        location_name = "OTHER";
-        break;
-    }
-
     absl::SubstituteAndAppend(&text_, "$0: $1: $2: $3\n", filename,
-                              element_name, location_name, message);
+                              element_name, ErrorLocationName(location),
+                              message);
   }
 
   // implements ErrorCollector ---------------------------------------
   void RecordWarning(absl::string_view filename, absl::string_view element_name,
                      const Message* descriptor, ErrorLocation location,
                      absl::string_view message) override {
-    const char* location_name = nullptr;
-    switch (location) {
-      case NAME:
-        location_name = "NAME";
-        break;
-      case NUMBER:
-        location_name = "NUMBER";
-        break;
-      case TYPE:
-        location_name = "TYPE";
-        break;
-      case EXTENDEE:
-        location_name = "EXTENDEE";
-        break;
-      case DEFAULT_VALUE:
-        location_name = "DEFAULT_VALUE";
-        break;
-      case OPTION_NAME:
-        location_name = "OPTION_NAME";
-        break;
-      case OPTION_VALUE:
-        location_name = "OPTION_VALUE";
-        break;
-      case INPUT_TYPE:
-        location_name = "INPUT_TYPE";
-        break;
-      case OUTPUT_TYPE:
-        location_name = "OUTPUT_TYPE";
-        break;
-      case IMPORT:
-        location_name = "IMPORT";
-        break;
-      case OTHER:
-        location_name = "OTHER";
-        break;
-    }
-
     absl::SubstituteAndAppend(&warning_text_, "$0: $1: $2: $3\n", filename,
-                              element_name, location_name, message);
+                              element_name, ErrorLocationName(location),
+                              message);
   }
 };
 
@@ -540,7 +469,7 @@ TEST_F(FileDescriptorTest, Syntax) {
     DescriptorPool pool;
     const FileDescriptor* file = pool.BuildFile(proto);
     EXPECT_TRUE(file != nullptr);
-    EXPECT_EQ(FileDescriptor::SYNTAX_PROTO2, file->syntax());
+    EXPECT_EQ(FileDescriptorLegacy::Syntax::SYNTAX_PROTO2, FileDescriptorLegacy(file).syntax());
     FileDescriptorProto other;
     file->CopyTo(&other);
     EXPECT_EQ("proto2", other.syntax());
@@ -551,7 +480,8 @@ TEST_F(FileDescriptorTest, Syntax) {
     DescriptorPool pool;
     const FileDescriptor* file = pool.BuildFile(proto);
     EXPECT_TRUE(file != nullptr);
-    EXPECT_EQ(FileDescriptor::SYNTAX_PROTO3, file->syntax());
+    EXPECT_EQ(FileDescriptorLegacy::Syntax::SYNTAX_PROTO3,
+              FileDescriptorLegacy(file).syntax());
     FileDescriptorProto other;
     file->CopyTo(&other);
     EXPECT_EQ("proto3", other.syntax());
@@ -6157,6 +6087,35 @@ TEST_F(ValidationErrorTest, DisallowEnumAlias) {
       "foo.proto: Bar: NUMBER: "
       "\"ENUM_B\" uses the same enum value as \"ENUM_A\". "
       "If this is intended, set 'option allow_alias = true;' to the enum "
+      "definition. The next available enum value is 1.\n");
+
+  BuildFileWithErrors(
+      R"pb(
+        name: "foo.proto"
+        enum_type {
+          name: "Bar"
+          value { name: "ENUM_A" number: 10 }
+          value { name: "ENUM_B" number: 10 }
+          value { name: "ENUM_C" number: 11 }
+          value { name: "ENUM_D" number: 20 }
+        })pb",
+      "foo.proto: Bar: NUMBER: "
+      "\"ENUM_B\" uses the same enum value as \"ENUM_A\". "
+      "If this is intended, set 'option allow_alias = true;' to the enum "
+      "definition. The next available enum value is 12.\n");
+
+  BuildFileWithErrors(
+      absl::Substitute(R"pb(
+                         name: "foo.proto"
+                         enum_type {
+                           name: "Bar"
+                           value { name: "ENUM_A" number: $0 }
+                           value { name: "ENUM_B" number: $0 }
+                         })pb",
+                       std::numeric_limits<int32_t>::max()),
+      "foo.proto: Bar: NUMBER: "
+      "\"ENUM_B\" uses the same enum value as \"ENUM_A\". "
+      "If this is intended, set 'option allow_alias = true;' to the enum "
       "definition.\n");
 }
 
@@ -7835,6 +7794,7 @@ TEST_F(SourceLocationTest, ExtensionSourceLocation) {
   EXPECT_TRUE(message_extension_desc->GetSourceLocation(&loc));
   EXPECT_EQ("44:5-44:41", PrintSourceLocation(loc));
 }
+
 TEST_F(SourceLocationTest, InterpretedOptionSourceLocation) {
   // This one's a doozy. It checks every kind of option, including
   // extension range options.

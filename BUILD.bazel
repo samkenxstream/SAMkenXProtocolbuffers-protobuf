@@ -322,7 +322,7 @@ proto_lang_toolchain(
         "//:descriptor_proto",
     ],
     command_line = "--cpp_out=$(OUT)",
-    runtime = ":protobuf",
+    runtime = "//src/google/protobuf:protobuf_nowkt",
     visibility = ["//visibility:public"],
 )
 
@@ -566,7 +566,6 @@ pkg_files(
         "LICENSE",
         "README.md",
         "WORKSPACE",
-        "cmake/CMakeLists.txt",
         "cmake/README.md",
         "generate_descriptor_proto.sh",
         "maven_install.json",

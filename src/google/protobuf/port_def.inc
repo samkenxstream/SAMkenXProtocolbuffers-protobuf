@@ -213,20 +213,20 @@ static_assert(PROTOBUF_CPLUSPLUS_MIN(201402L), "Protobuf only supports C++14 and
 // Owner: shaod@, gberg@
 #define PROTOBUF_FUTURE_DESCRIPTOR_EXTENSION_DECL 1
 
-// Enable cord handling.
-// Owner: mvels@, mkruskal@
-#define PROTOBUF_FUTURE_OPENSOURCE_CORD 1
-
 // Used to remove `RepeatedPtrField::GetArena() const`.
 // Owner: ezb@
 #define PROTOBUF_FUTURE_REMOVE_CONST_REPEATEDFIELD_GETARENA_API 1
+
+// Used to remove Protobuf editions feature.
+// Owner: mkruskal@
+#define PROTOBUF_FUTURE_EDITIONS 1
 
 #endif
 
 #ifdef PROTOBUF_VERSION
 #error PROTOBUF_VERSION was previously defined
 #endif
-#define PROTOBUF_VERSION 4022001
+#define PROTOBUF_VERSION 4022002
 
 #ifdef PROTOBUF_MIN_HEADER_VERSION_FOR_PROTOC
 #error PROTOBUF_MIN_HEADER_VERSION_FOR_PROTOC was previously defined
@@ -617,21 +617,6 @@ static_assert(PROTOBUF_CPLUSPLUS_MIN(201402L), "Protobuf only supports C++14 and
 #define PROTOBUF_FALLTHROUGH_INTENDED
 #endif
 
-// PROTOBUF_ASSUME(pred) tells the compiler that it can assume pred is true. To
-// be safe, we also validate the assumption with a ABSL_DCHECK in unoptimized
-// builds. The macro does not do anything useful if the compiler does not
-// support __builtin_assume.
-#ifdef PROTOBUF_ASSUME
-#error PROTOBUF_ASSUME was previously defined
-#endif
-#if __has_builtin(__builtin_assume)
-#define PROTOBUF_ASSUME(pred) \
-  ABSL_DCHECK(pred);               \
-  __builtin_assume(pred)
-#else
-#define PROTOBUF_ASSUME(pred) ABSL_DCHECK(pred)
-#endif
-
 // Specify memory alignment for structs, classes, etc.
 // Use like:
 //   class PROTOBUF_ALIGNAS(16) MyClass { ... }
@@ -839,12 +824,6 @@ static_assert(PROTOBUF_CPLUSPLUS_MIN(201402L), "Protobuf only supports C++14 and
 #  endif
 #endif
 
-// Tail call table-driven parsing is enabled by default.
-#ifdef PROTOBUF_TAIL_CALL_TABLE_PARSER_ENABLED
-#error PROTOBUF_TAIL_CALL_TABLE_PARSER_ENABLED was previously declared
-#endif
-#define PROTOBUF_TAIL_CALL_TABLE_PARSER_ENABLED 1
-
 #ifdef PROTOBUF_USE_TABLE_PARSER_ON_REFLECTION
 #error PROTOBUF_USE_TABLE_PARSER_ON_REFLECTION was previously defined
 #endif
@@ -1020,6 +999,9 @@ static_assert(PROTOBUF_CPLUSPLUS_MIN(201402L), "Protobuf only supports C++14 and
 // Turn on -Wdeprecated-enum-enum-conversion. This deprecation comes in C++20
 // via http://wg21.link/p1120r0.
 #pragma clang diagnostic error "-Wdeprecated-enum-enum-conversion"
+// This error has been generally flaky, but we need to disable it specifically
+// to fix https://github.com/protocolbuffers/protobuf/issues/12313
+#pragma clang diagnostic ignored "-Wunused-parameter"
 #endif
 #ifdef __GNUC__
 #pragma GCC diagnostic push
@@ -1040,6 +1022,9 @@ static_assert(PROTOBUF_CPLUSPLUS_MIN(201402L), "Protobuf only supports C++14 and
 //   int index = ...
 //   int value = vec[index];
 #pragma GCC diagnostic ignored "-Wsign-conversion"
+// This error has been generally flaky, but we need to disable it specifically
+// to fix https://github.com/protocolbuffers/protobuf/issues/12313
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #if __GNUC__ == 12 && __GNUC_MINOR__ < 4
 // Wrong warning emitted when assigning a single char c-string to a std::string
 // in c++20 mode and optimization on.
@@ -1071,20 +1056,53 @@ static_assert(PROTOBUF_CPLUSPLUS_MIN(201402L), "Protobuf only supports C++14 and
 #define PROTOBUF_DEBUG false
 #endif
 
-// This `for` allows us to condition the `ABSL_LOG` on the define above, so that
-// code can write `PROTOBUF_DLOG(INFO) << ...;` and have it turned off when
-// debug logging is off.
-//
-// This is a `for`, not and `if`, to avoid it accidentally chaining with an
-// `else` below it.
-#define PROTOBUF_DLOG(x) \
-  for (bool b = PROTOBUF_DEBUG; b; b = false) ABSL_LOG(x)
-
 #define PROTO2_IS_OSS true
 
 #ifdef PROTOBUF_NO_THREADLOCAL
 #error PROTOBUF_NO_THREADLOCAL was previously defined
 #endif
+
+// port_def.inc may be included in very large compilation targets, so we need to
+// minimize adding symbol and source file information here. For this reason we
+// implement our own simple `protobuf_assumption_failed()` function for
+// asserting PROTOBUF_ASSUME predicates in debug builds.
+namespace google {
+namespace protobuf {
+namespace internal {
+PROTOBUF_EXPORT void protobuf_assumption_failed(const char *pred,
+                                                const char *file, int line);
+}  // namespace internal
+}  // namespace protobuf
+}  // namespace google
+
+// PROTOBUF_ASSUME(pred) tells the compiler that it can assume pred is true.
+// To be safe, we also validate the assumption in debug builds, printing an
+// assert style "Assumption failed: ..." message and aborting the program if
+// the predicate is false. The macro does not do anything useful if the
+// compiler does not support __builtin_assume.
+#ifdef PROTOBUF_ASSUME
+#error PROTOBUF_ASSUME was previously defined
+#endif
+#if __has_builtin(__builtin_assume)
+#ifdef NDEBUG
+#define PROTOBUF_ASSUME(pred) __builtin_assume(pred)
+#else  // NDEBUG
+#define PROTOBUF_ASSUME(pred)                                                  \
+  if (!(pred)) {                                                               \
+    ::google::protobuf::internal::protobuf_assumption_failed(#pred, __FILE__, __LINE__); \
+  }                                                                            \
+  __builtin_assume(pred)
+#endif  // NDEBUG
+#else   // has_builtin(__builtin_assume)
+#ifndef NDEBUG
+#define PROTOBUF_ASSUME(pred)                                                  \
+  if (!(pred)) {                                                               \
+    ::google::protobuf::internal::protobuf_assumption_failed(#pred, __FILE__, __LINE__); \
+  }
+#else  // !NDEBUG
+#define PROTOBUF_ASSUME(pred)
+#endif  // !NDEBUG
+#endif  // has_builtin(__builtin_assume)
 
 // We don't want code outside port_def doing complex testing, so
 // remove our portable condition test macros to nudge folks away from
