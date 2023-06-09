@@ -67,15 +67,25 @@ namespace internal {
 PROTOBUF_EXPORT extern const char kDebugStringSilentMarker[1];
 PROTOBUF_EXPORT extern const char kDebugStringSilentMarkerForDetection[3];
 
-PROTOBUF_EXPORT extern std::atomic<bool> enable_debug_text_redaction_marker;
-PROTOBUF_EXPORT extern std::atomic<bool> enable_debug_text_random_marker;
 PROTOBUF_EXPORT extern std::atomic<bool> enable_debug_text_format_marker;
+PROTOBUF_EXPORT extern std::atomic<bool> enable_debug_text_detection;
+PROTOBUF_EXPORT extern std::atomic<bool> enable_debug_text_redaction;
+PROTOBUF_EXPORT int64_t GetRedactedFieldCount();
 
 }  // namespace internal
 
 namespace io {
 class ErrorCollector;  // tokenizer.h
 }
+
+namespace internal {
+// Enum used to set printing options for StringifyMessage.
+PROTOBUF_EXPORT enum class Option;
+
+// Converts a protobuf message to a string with redaction enabled.
+PROTOBUF_EXPORT std::string StringifyMessage(const Message& message,
+                                             Option option);
+}  // namespace internal
 
 // This class implements protocol buffer text format, colloquially known as text
 // proto.  Printing and parsing protocol messages in text format is useful for
@@ -345,8 +355,8 @@ class PROTOBUF_EXPORT TextFormat {
     // Takes ownership of the printer.
     void SetDefaultFieldValuePrinter(const FastFieldValuePrinter* printer);
 
-    PROTOBUF_DEPRECATED_MSG("Please use FastFieldValuePrinter")
-    void SetDefaultFieldValuePrinter(const FieldValuePrinter* printer);
+    [[deprecated("Please use FastFieldValuePrinter")]] void
+    SetDefaultFieldValuePrinter(const FieldValuePrinter* printer);
 
     // Sets whether we want to hide unknown fields or not.
     // Usually unknown fields are printed in a generic way that includes the
@@ -399,9 +409,9 @@ class PROTOBUF_EXPORT TextFormat {
     bool RegisterFieldValuePrinter(const FieldDescriptor* field,
                                    const FastFieldValuePrinter* printer);
 
-    PROTOBUF_DEPRECATED_MSG("Please use FastFieldValuePrinter")
-    bool RegisterFieldValuePrinter(const FieldDescriptor* field,
-                                   const FieldValuePrinter* printer);
+    [[deprecated("Please use FastFieldValuePrinter")]] bool
+    RegisterFieldValuePrinter(const FieldDescriptor* field,
+                              const FieldValuePrinter* printer);
 
     // Register a custom message-specific MessagePrinter for messages with a
     // particular Descriptor.
@@ -422,9 +432,8 @@ class PROTOBUF_EXPORT TextFormat {
     friend std::string Message::DebugString() const;
     friend std::string Message::ShortDebugString() const;
     friend std::string Message::Utf8DebugString() const;
-    friend void internal::PerformAbslStringify(
-        const Message& message,
-        absl::FunctionRef<void(absl::string_view)> append);
+    friend std::string internal::StringifyMessage(const Message& message,
+                                                  internal::Option option);
 
     // Sets whether silent markers will be inserted.
     void SetInsertSilentMarker(bool v) { insert_silent_marker_ = v; }
@@ -436,6 +445,12 @@ class PROTOBUF_EXPORT TextFormat {
     // This discourages equality checks based on serialized string comparisons.
     void SetRandomizeDebugString(bool randomize) {
       randomize_debug_string_ = randomize;
+    }
+
+    // Sets whether sensitive fields found in the message will be reported or
+    // not.
+    void SetReportSensitiveFields(bool report) {
+      report_sensitive_fields_ = report;
     }
 
     // Forward declaration of an internal class used to print the text
@@ -488,6 +503,13 @@ class PROTOBUF_EXPORT TextFormat {
 
     bool PrintAny(const Message& message, BaseTextGenerator* generator) const;
 
+    // Try to redact a field value based on the annotations associated with
+    // the field. This function returns true if it redacts the field value.
+    bool TryRedactFieldValue(const Message& message,
+                             const FieldDescriptor* field,
+                             BaseTextGenerator* generator,
+                             bool insert_value_separator) const;
+
     const FastFieldValuePrinter* GetFieldPrinter(
         const FieldDescriptor* field) const {
       auto it = custom_printers_.find(field);
@@ -502,6 +524,7 @@ class PROTOBUF_EXPORT TextFormat {
     bool insert_silent_marker_;
     bool redact_debug_string_;
     bool randomize_debug_string_;
+    bool report_sensitive_fields_;
     bool hide_unknown_fields_;
     bool print_message_fields_in_index_order_;
     bool expand_any_;

@@ -37,6 +37,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/match.h"
 #include "absl/types/span.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/dynamic_message.h"
@@ -46,6 +47,15 @@ namespace protobuf {
 namespace compiler {
 
 namespace {
+
+bool IsOptionsProto(const Message& m) {
+  const Descriptor* descriptor = m.GetDescriptor();
+  return descriptor->file()->name() ==
+             DescriptorProto::descriptor()->file()->name() &&
+         absl::EndsWith(descriptor->name(), "Options");
+}
+
+bool IsEmpty(const Message& m) { return m.ByteSizeLong() == 0; }
 
 // Recursively strips any options with source retention from the message. If
 // stripped_paths is not null, then this function will populate it with the
@@ -74,8 +84,18 @@ void StripMessage(Message& m, std::vector<int>& path,
           path.pop_back();
         }
       } else {
-        StripMessage(*reflection->MutableMessage(&m, field), path,
-                     stripped_paths);
+        Message* child = reflection->MutableMessage(&m, field);
+        bool was_nonempty_options_proto =
+            IsOptionsProto(*child) && !IsEmpty(*child);
+        StripMessage(*child, path, stripped_paths);
+        // If this is an options message that became empty due to retention
+        // stripping, remove it.
+        if (was_nonempty_options_proto && IsEmpty(*child)) {
+          reflection->ClearField(&m, field);
+          if (stripped_paths != nullptr) {
+            stripped_paths->push_back(path);
+          }
+        }
       }
     }
     path.pop_back();
@@ -102,8 +122,7 @@ void ConvertToDynamicMessageAndStripOptions(
   const Descriptor* descriptor = pool.FindMessageTypeByName(m.GetTypeName());
   std::vector<int> path;
 
-  if (descriptor == nullptr ||
-      descriptor->file()->pool() == DescriptorPool::generated_pool()) {
+  if (descriptor == nullptr || &pool == DescriptorPool::generated_pool()) {
     // If the pool does not contain the descriptor, then this proto file does
     // not transitively depend on descriptor.proto, in which case we know there
     // are no custom options to worry about. If we are working with the
@@ -111,15 +130,41 @@ void ConvertToDynamicMessageAndStripOptions(
     // having to resort to DynamicMessage.
     StripMessage(m, path, stripped_paths);
   } else {
+    // To convert to a dynamic message, we need to serialize the original
+    // descriptor and parse it back again. This can fail if the descriptor is
+    // invalid, so in that case we try to handle it gracefully by stripping the
+    // original descriptor without using DynamicMessage. In this situation we
+    // will generally not be able to strip custom options, but we can at least
+    // strip built-in options.
     DynamicMessageFactory factory;
     std::unique_ptr<Message> dynamic_message(
         factory.GetPrototype(descriptor)->New());
     std::string serialized;
-    ABSL_CHECK(m.SerializeToString(&serialized));
-    ABSL_CHECK(dynamic_message->ParseFromString(serialized));
+    if (!m.SerializePartialToString(&serialized)) {
+      ABSL_LOG_EVERY_N_SEC(ERROR, 1)
+          << "Failed to fully strip source-retention options";
+      StripMessage(m, path, stripped_paths);
+      return;
+    }
+    if (!dynamic_message->ParsePartialFromString(serialized)) {
+      ABSL_LOG_EVERY_N_SEC(ERROR, 1)
+          << "Failed to fully strip source-retention options";
+      StripMessage(m, path, stripped_paths);
+      return;
+    }
     StripMessage(*dynamic_message, path, stripped_paths);
-    ABSL_CHECK(dynamic_message->SerializeToString(&serialized));
-    ABSL_CHECK(m.ParseFromString(serialized));
+    if (!dynamic_message->SerializePartialToString(&serialized)) {
+      ABSL_LOG_EVERY_N_SEC(ERROR, 1)
+          << "Failed to fully strip source-retention options";
+      StripMessage(m, path, stripped_paths);
+      return;
+    }
+    if (!m.ParsePartialFromString(serialized)) {
+      ABSL_LOG_EVERY_N_SEC(ERROR, 1)
+          << "Failed to fully strip source-retention options";
+      StripMessage(m, path, stripped_paths);
+      return;
+    }
   }
 }
 
@@ -274,8 +319,7 @@ MessageOptions StripLocalSourceRetentionOptions(const Descriptor& descriptor) {
 
 ExtensionRangeOptions StripLocalSourceRetentionOptions(
     const Descriptor& descriptor, const Descriptor::ExtensionRange& range) {
-  if (range.options_ == nullptr) return ExtensionRangeOptions{};
-  ExtensionRangeOptions options = *range.options_;
+  ExtensionRangeOptions options = range.options();
   ConvertToDynamicMessageAndStripOptions(options, GetPool(descriptor));
   return options;
 }

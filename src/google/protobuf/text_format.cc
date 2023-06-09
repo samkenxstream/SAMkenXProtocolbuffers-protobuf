@@ -82,6 +82,8 @@ using internal::ScopedReflectionMode;
 
 namespace {
 
+const absl::string_view kFieldValueReplacement = "[REDACTED]";
+
 inline bool IsHexNumber(const std::string& str) {
   return (str.length() >= 2 && str[0] == '0' &&
           (str[1] == 'x' || str[1] == 'X'));
@@ -92,20 +94,36 @@ inline bool IsOctNumber(const std::string& str) {
           (str[1] >= '0' && str[1] < '8'));
 }
 
+// The number of fields that are redacted in AbslStringify.
+std::atomic<int64_t> num_redacted_field{0};
+
+inline void IncrementRedactedFieldCounter() {
+  num_redacted_field.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void TrimTrailingSpace(std::string& debug_string) {
+  // Single line mode currently might have an extra space at the end.
+  if (!debug_string.empty() && debug_string.back() == ' ') {
+    debug_string.pop_back();
+  }
+}
+
 }  // namespace
 
 namespace internal {
 const char kDebugStringSilentMarker[] = "";
 const char kDebugStringSilentMarkerForDetection[] = "\t ";
 
-// Controls insertion of a marker making debug strings non-parseable.
-PROTOBUF_EXPORT std::atomic<bool> enable_debug_text_redaction_marker;
-
-// Controls insertion of a randomized marker in debug strings.
-PROTOBUF_EXPORT std::atomic<bool> enable_debug_text_random_marker;
-
-// Controls insertion of kDebugStringSilentMarker.
+// Controls insertion of kDebugStringSilentMarker into DebugString() output.
 PROTOBUF_EXPORT std::atomic<bool> enable_debug_text_format_marker;
+
+// Controls insertion of a marker making debug strings non-parseable, and
+// redacting annotated fields.
+PROTOBUF_EXPORT std::atomic<bool> enable_debug_text_redaction{true};
+
+int64_t GetRedactedFieldCount() {
+  return num_redacted_field.load(std::memory_order_relaxed);
+}
 }  // namespace internal
 
 std::string Message::DebugString() const {
@@ -117,12 +135,6 @@ std::string Message::DebugString() const {
   printer.SetExpandAny(true);
   printer.SetInsertSilentMarker(internal::enable_debug_text_format_marker.load(
       std::memory_order_relaxed));
-  printer.SetRedactDebugString(
-      internal::enable_debug_text_redaction_marker.load(
-          std::memory_order_relaxed));
-  printer.SetRandomizeDebugString(
-      internal::enable_debug_text_random_marker.load(
-          std::memory_order_relaxed));
 
   printer.PrintToString(*this, &debug_string);
 
@@ -139,18 +151,9 @@ std::string Message::ShortDebugString() const {
   printer.SetExpandAny(true);
   printer.SetInsertSilentMarker(internal::enable_debug_text_format_marker.load(
       std::memory_order_relaxed));
-  printer.SetRedactDebugString(
-      internal::enable_debug_text_redaction_marker.load(
-          std::memory_order_relaxed));
-  printer.SetRandomizeDebugString(
-      internal::enable_debug_text_random_marker.load(
-          std::memory_order_relaxed));
 
   printer.PrintToString(*this, &debug_string);
-  // Single line mode currently might have an extra space at the end.
-  if (!debug_string.empty() && debug_string[debug_string.size() - 1] == ' ') {
-    debug_string.resize(debug_string.size() - 1);
-  }
+  TrimTrailingSpace(debug_string);
 
   return debug_string;
 }
@@ -165,12 +168,6 @@ std::string Message::Utf8DebugString() const {
   printer.SetExpandAny(true);
   printer.SetInsertSilentMarker(internal::enable_debug_text_format_marker.load(
       std::memory_order_relaxed));
-  printer.SetRedactDebugString(
-      internal::enable_debug_text_redaction_marker.load(
-          std::memory_order_relaxed));
-  printer.SetRandomizeDebugString(
-      internal::enable_debug_text_random_marker.load(
-          std::memory_order_relaxed));
 
   printer.PrintToString(*this, &debug_string);
 
@@ -181,22 +178,51 @@ void Message::PrintDebugString() const { printf("%s", DebugString().c_str()); }
 
 namespace internal {
 
-void PerformAbslStringify(const Message& message,
-                          absl::FunctionRef<void(absl::string_view)> append) {
+enum class Option { kNone, kShort, kUTF8 };
+
+std::string StringifyMessage(const Message& message, Option option) {
   // Indicate all scoped reflection calls are from DebugString function.
   ScopedReflectionMode scope(ReflectionMode::kDebugString);
 
-  // TODO(b/249835002): consider using the single line version for short
   TextFormat::Printer printer;
+  switch (option) {
+    case Option::kShort:
+      printer.SetSingleLineMode(true);
+      break;
+    case Option::kUTF8:
+      printer.SetUseUtf8StringEscaping(true);
+      break;
+    case Option::kNone:
+      break;
+  }
   printer.SetExpandAny(true);
-  printer.SetRedactDebugString(true);
+  printer.SetRedactDebugString(
+      internal::enable_debug_text_redaction.load(std::memory_order_relaxed));
   printer.SetRandomizeDebugString(true);
+  printer.SetReportSensitiveFields(true);
   std::string result;
   printer.PrintToString(message, &result);
-  append(result);
+
+  if (option == Option::kShort) {
+    TrimTrailingSpace(result);
+  }
+
+  return result;
+}
+
+PROTOBUF_EXPORT std::string StringifyMessage(const Message& message) {
+  return StringifyMessage(message, Option::kNone);
 }
 
 }  // namespace internal
+
+PROTOBUF_EXPORT std::string ShortFormat(const Message& message) {
+  return internal::StringifyMessage(message, internal::Option::kShort);
+}
+
+PROTOBUF_EXPORT std::string Utf8Format(const Message& message) {
+  return internal::StringifyMessage(message, internal::Option::kUTF8);
+}
 
 
 // ===========================================================================
@@ -412,12 +438,14 @@ class TextFormat::Parser::ParserImpl {
   void ReportWarning(int line, int col, const absl::string_view message) {
     if (error_collector_ == nullptr) {
       if (line >= 0) {
-        ABSL_LOG(WARNING) << "Warning parsing text-format "
-                          << root_message_type_->full_name() << ": "
-                          << (line + 1) << ":" << (col + 1) << ": " << message;
+        ABSL_LOG_EVERY_POW_2(WARNING)
+            << "Warning parsing text-format " << root_message_type_->full_name()
+            << ": " << (line + 1) << ":" << (col + 1) << " (N = " << COUNTER
+            << "): " << message;
       } else {
-        ABSL_LOG(WARNING) << "Warning parsing text-format "
-                          << root_message_type_->full_name() << ": " << message;
+        ABSL_LOG_EVERY_POW_2(WARNING)
+            << "Warning parsing text-format " << root_message_type_->full_name()
+            << " (N = " << COUNTER << "): " << message;
       }
     } else {
       error_collector_->RecordWarning(line, col, message);
@@ -2080,6 +2108,7 @@ TextFormat::Printer::Printer()
       insert_silent_marker_(false),
       redact_debug_string_(false),
       randomize_debug_string_(false),
+      report_sensitive_fields_(false),
       hide_unknown_fields_(false),
       print_message_fields_in_index_order_(false),
       expand_any_(false),
@@ -2538,6 +2567,10 @@ void TextFormat::Printer::PrintField(const Message& message,
     PrintFieldName(message, field_index, count, reflection, field, generator);
 
     if (field->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE) {
+      if (TryRedactFieldValue(message, field, generator,
+                              /*insert_value_separator=*/true)) {
+        break;
+      }
       const FastFieldValuePrinter* printer = GetFieldPrinter(field);
       const Message& sub_message =
           field->is_repeated()
@@ -2618,9 +2651,8 @@ void TextFormat::Printer::PrintFieldValue(const Message& message,
       << "Index must be -1 for non-repeated fields";
 
   const FastFieldValuePrinter* printer = GetFieldPrinter(field);
-  if (redact_debug_string_ && field->options().debug_redact()) {
-    // TODO(b/258975650): Create OSS redaction documentation
-    generator->PrintString("[REDACTED]");
+  if (TryRedactFieldValue(message, field, generator,
+                          /*insert_value_separator=*/false)) {
     return;
   }
 
@@ -2838,6 +2870,39 @@ void TextFormat::Printer::PrintUnknownFields(
         break;
     }
   }
+}
+
+namespace {
+
+// Check if the field is sensitive and should be redacted.
+bool ShouldRedactField(const FieldDescriptor* field) {
+  if (field->options().debug_redact()) return true;
+  return false;
+}
+
+}  // namespace
+
+bool TextFormat::Printer::TryRedactFieldValue(
+    const Message& message, const FieldDescriptor* field,
+    BaseTextGenerator* generator, bool insert_value_separator) const {
+  if (ShouldRedactField(field)) {
+    if (redact_debug_string_) {
+      IncrementRedactedFieldCounter();
+      if (insert_value_separator) {
+        generator->PrintMaybeWithMarker(MarkerToken(), ": ");
+      }
+      generator->PrintString(kFieldValueReplacement);
+      if (insert_value_separator) {
+        if (single_line_mode_) {
+          generator->PrintLiteral(" ");
+        } else {
+          generator->PrintLiteral("\n");
+        }
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace protobuf

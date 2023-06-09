@@ -39,6 +39,7 @@
 #include <type_traits>
 #include <typeinfo>
 #include <utility>
+#include <vector>
 
 #include "google/protobuf/stubs/common.h"
 #include "absl/base/attributes.h"
@@ -46,7 +47,6 @@
 #include "absl/numeric/bits.h"
 #include "google/protobuf/arena_align.h"
 #include "google/protobuf/arena_cleanup.h"
-#include "google/protobuf/arena_config.h"
 #include "google/protobuf/arenaz_sampler.h"
 #include "google/protobuf/port.h"
 #include "google/protobuf/string_block.h"
@@ -292,6 +292,8 @@ class PROTOBUF_EXPORT SerialArena {
   }
 
   ABSL_ATTRIBUTE_RETURNS_NONNULL void* AllocateFromStringBlock();
+
+  std::vector<void*> PeekCleanupListForTesting();
 
  private:
   bool MaybeAllocateString(void*& p);

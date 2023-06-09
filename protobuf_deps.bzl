@@ -7,9 +7,9 @@ PROTOBUF_MAVEN_ARTIFACTS = [
     "com.google.code.findbugs:jsr305:3.0.2",
     "com.google.code.gson:gson:2.8.9",
     "com.google.errorprone:error_prone_annotations:2.5.1",
-    "com.google.j2objc:j2objc-annotations:1.3",
-    "com.google.guava:guava:31.1-jre",
-    "com.google.guava:guava-testlib:31.1-jre",
+    "com.google.j2objc:j2objc-annotations:2.8",
+    "com.google.guava:guava:32.0.0-jre",
+    "com.google.guava:guava-testlib:32.0.0-jre",
     "com.google.truth:truth:1.1.2",
     "junit:junit:4.13.2",
     "org.mockito:mockito-core:4.3.1",
@@ -42,8 +42,8 @@ def protobuf_deps():
         _github_archive(
             name = "com_google_absl",
             repo = "https://github.com/abseil/abseil-cpp",
-            commit = "78be63686ba732b25052be15f8d6dee891c05749",  # Abseil LTS 20230125
-            sha256 = "4f356a07b9ec06ef51f943928508566e992f621ed5fa4dd588865d7bed1284cd",
+            commit = "c2435f8342c2d0ed8101cb43adfd605fdc52dca2",  # Abseil LTS 20230125.3
+            sha256 = "ea1d31db00eb37e607bfda17ffac09064670ddf05da067944c4766f517876390",
         )
 
     if not native.existing_rule("zlib"):
@@ -151,7 +151,7 @@ def protobuf_deps():
         _github_archive(
             name = "upb",
             repo = "https://github.com/protocolbuffers/upb",
-            commit = "e6dd5bfefe4829ff105b02e335520d4e35b888d2",
-            sha256 = "4ab6f7f7cfc2b95b5ab242ecb7cdcefe3c44c1267b56e6bd1bad4accae1030fd",
+            commit = "7f0092a8021466009e65367aed68f2a1867da880",
+            sha256 = "3c1e1e58f96b97dde14c0e911cfb6378b14027b17314e946f6a6ce3fcf5b2088",
             patches = ["@com_google_protobuf//build_defs:upb.patch"],
         )

@@ -34,10 +34,13 @@
 
 #include "google/protobuf/compiler/command_line_interface.h"
 
+#include "absl/algorithm/container.h"
 #include "absl/container/btree_set.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/types/span.h"
 #include "google/protobuf/compiler/allowlists/allowlists.h"
 #include "google/protobuf/descriptor_legacy.h"
+#include "google/protobuf/descriptor_visitor.h"
 
 #include "google/protobuf/stubs/platform_macros.h"
 
@@ -77,8 +80,6 @@
 #include "google/protobuf/stubs/common.h"
 #include "absl/log/absl_check.h"
 #include "absl/log/absl_log.h"
-#include "google/protobuf/compiler/subprocess.h"
-#include "google/protobuf/compiler/plugin.pb.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_format.h"
@@ -88,7 +89,9 @@
 #include "absl/strings/substitute.h"
 #include "google/protobuf/compiler/code_generator.h"
 #include "google/protobuf/compiler/importer.h"
+#include "google/protobuf/compiler/plugin.pb.h"
 #include "google/protobuf/compiler/retention.h"
+#include "google/protobuf/compiler/subprocess.h"
 #include "google/protobuf/compiler/zip_writer.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/dynamic_message.h"
@@ -1023,69 +1026,6 @@ bool ContainsProto3Optional(const FileDescriptor* file) {
   return false;
 }
 
-template <typename Visitor>
-struct VisitImpl {
-  Visitor visitor;
-  void Visit(const FieldDescriptor* descriptor) { visitor(descriptor); }
-
-  void Visit(const EnumDescriptor* descriptor) { visitor(descriptor); }
-
-  void Visit(const Descriptor* descriptor) {
-    visitor(descriptor);
-
-    for (int i = 0; i < descriptor->enum_type_count(); i++) {
-      Visit(descriptor->enum_type(i));
-    }
-
-    for (int i = 0; i < descriptor->field_count(); i++) {
-      Visit(descriptor->field(i));
-    }
-
-    for (int i = 0; i < descriptor->nested_type_count(); i++) {
-      Visit(descriptor->nested_type(i));
-    }
-
-    for (int i = 0; i < descriptor->extension_count(); i++) {
-      Visit(descriptor->extension(i));
-    }
-  }
-
-  void Visit(const std::vector<const FileDescriptor*>& descriptors) {
-    for (auto* descriptor : descriptors) {
-      visitor(descriptor);
-      for (int i = 0; i < descriptor->message_type_count(); i++) {
-        Visit(descriptor->message_type(i));
-      }
-      for (int i = 0; i < descriptor->enum_type_count(); i++) {
-        Visit(descriptor->enum_type(i));
-      }
-      for (int i = 0; i < descriptor->extension_count(); i++) {
-        Visit(descriptor->extension(i));
-      }
-    }
-  }
-};
-
-// Visit every node in the descriptors calling `visitor(node)`.
-// The visitor does not need to handle all possible node types. Types that are
-// not visitable via `visitor` will be ignored.
-// Disclaimer: this is not fully implemented yet to visit _every_ node.
-// VisitImpl might need to be updated where needs arise.
-template <typename Visitor>
-void VisitDescriptors(const std::vector<const FileDescriptor*>& descriptors,
-                      Visitor visitor) {
-  // Provide a fallback to ignore all the nodes that are not interesting to the
-  // input visitor.
-  struct VisitorImpl : Visitor {
-    explicit VisitorImpl(Visitor visitor) : Visitor(visitor) {}
-    using Visitor::operator();
-    // Honeypot to ignore all inputs that Visitor does not take.
-    void operator()(const void*) const {}
-  };
-
-  VisitImpl<VisitorImpl>{VisitorImpl(visitor)}.Visit(descriptors);
-}
-
 bool HasReservedFieldNumber(const FieldDescriptor* field) {
   if (field->number() >= FieldDescriptor::kFirstReservedNumber &&
       field->number() <= FieldDescriptor::kLastReservedNumber) {
@@ -1099,7 +1039,150 @@ bool HasReservedFieldNumber(const FieldDescriptor* field) {
 namespace {
 std::unique_ptr<SimpleDescriptorDatabase>
 PopulateSingleSimpleDescriptorDatabase(const std::string& descriptor_set_name);
+
+// Indicates whether the field is compatible with the given target type.
+bool IsFieldCompatible(const FieldDescriptor& field,
+                       FieldOptions::OptionTargetType target_type) {
+  const RepeatedField<int>& allowed_targets = field.options().targets();
+  return allowed_targets.empty() ||
+         absl::c_linear_search(allowed_targets, target_type);
 }
+
+// Converts the OptionTargetType enum to a string suitable for use in error
+// messages.
+absl::string_view TargetTypeString(FieldOptions::OptionTargetType target_type) {
+  switch (target_type) {
+    case FieldOptions::TARGET_TYPE_FILE:
+      return "file";
+    case FieldOptions::TARGET_TYPE_EXTENSION_RANGE:
+      return "extension range";
+    case FieldOptions::TARGET_TYPE_MESSAGE:
+      return "message";
+    case FieldOptions::TARGET_TYPE_FIELD:
+      return "field";
+    case FieldOptions::TARGET_TYPE_ONEOF:
+      return "oneof";
+    case FieldOptions::TARGET_TYPE_ENUM:
+      return "enum";
+    case FieldOptions::TARGET_TYPE_ENUM_ENTRY:
+      return "enum entry";
+    case FieldOptions::TARGET_TYPE_SERVICE:
+      return "service";
+    case FieldOptions::TARGET_TYPE_METHOD:
+      return "method";
+    default:
+      return "unknown";
+  }
+}
+
+// Recursively validates that the options message (or subpiece of an options
+// message) is compatible with the given target type.
+bool ValidateTargetConstraintsRecursive(
+    const Message& m, DescriptorPool::ErrorCollector& error_collector,
+    absl::string_view file_name, FieldOptions::OptionTargetType target_type) {
+  std::vector<const FieldDescriptor*> fields;
+  const Reflection* reflection = m.GetReflection();
+  reflection->ListFields(m, &fields);
+  bool success = true;
+  for (const auto* field : fields) {
+    if (!IsFieldCompatible(*field, target_type)) {
+      success = false;
+      error_collector.RecordError(
+          file_name, "", nullptr, DescriptorPool::ErrorCollector::OPTION_NAME,
+          absl::StrCat("Option ", field->full_name(),
+                       " cannot be set on an entity of type `",
+                       TargetTypeString(target_type), "`."));
+    }
+    if (field->type() == FieldDescriptor::TYPE_MESSAGE) {
+      if (field->is_repeated()) {
+        int field_size = reflection->FieldSize(m, field);
+        for (int i = 0; i < field_size; ++i) {
+          if (!ValidateTargetConstraintsRecursive(
+                  reflection->GetRepeatedMessage(m, field, i), error_collector,
+                  file_name, target_type)) {
+            success = false;
+          }
+        }
+      } else if (!ValidateTargetConstraintsRecursive(
+                     reflection->GetMessage(m, field), error_collector,
+                     file_name, target_type)) {
+        success = false;
+      }
+    }
+  }
+  return success;
+}
+
+// Validates that the options message is correct with respect to target
+// constraints, returning true if successful. This function converts the
+// options message to a DynamicMessage so that we have visibility into custom
+// options. We take the element name as a FunctionRef so that we do not have to
+// pay the cost of constructing it unless there is an error.
+bool ValidateTargetConstraints(const Message& options,
+                               const DescriptorPool& pool,
+                               DescriptorPool::ErrorCollector& error_collector,
+                               absl::string_view file_name,
+                               FieldOptions::OptionTargetType target_type) {
+  const Descriptor* descriptor =
+      pool.FindMessageTypeByName(options.GetTypeName());
+  if (descriptor == nullptr) {
+    // We were unable to find the options message in the descriptor pool. This
+    // implies that the proto files we are working with do not depend on
+    // descriptor.proto, in which case there are no custom options to worry
+    // about. We can therefore skip the use of DynamicMessage.
+    return ValidateTargetConstraintsRecursive(options, error_collector,
+                                              file_name, target_type);
+  } else {
+    DynamicMessageFactory factory;
+    std::unique_ptr<Message> dynamic_message(
+        factory.GetPrototype(descriptor)->New());
+    std::string serialized;
+    ABSL_CHECK(options.SerializeToString(&serialized));
+    ABSL_CHECK(dynamic_message->ParseFromString(serialized));
+    return ValidateTargetConstraintsRecursive(*dynamic_message, error_collector,
+                                              file_name, target_type);
+  }
+}
+
+// The overloaded GetTargetType() functions below allow us to map from a
+// descriptor type to the associated OptionTargetType enum.
+FieldOptions::OptionTargetType GetTargetType(const FileDescriptor*) {
+  return FieldOptions::TARGET_TYPE_FILE;
+}
+
+FieldOptions::OptionTargetType GetTargetType(
+    const Descriptor::ExtensionRange*) {
+  return FieldOptions::TARGET_TYPE_EXTENSION_RANGE;
+}
+
+FieldOptions::OptionTargetType GetTargetType(const Descriptor*) {
+  return FieldOptions::TARGET_TYPE_MESSAGE;
+}
+
+FieldOptions::OptionTargetType GetTargetType(const FieldDescriptor*) {
+  return FieldOptions::TARGET_TYPE_FIELD;
+}
+
+FieldOptions::OptionTargetType GetTargetType(const OneofDescriptor*) {
+  return FieldOptions::TARGET_TYPE_ONEOF;
+}
+
+FieldOptions::OptionTargetType GetTargetType(const EnumDescriptor*) {
+  return FieldOptions::TARGET_TYPE_ENUM;
+}
+
+FieldOptions::OptionTargetType GetTargetType(const EnumValueDescriptor*) {
+  return FieldOptions::TARGET_TYPE_ENUM_ENTRY;
+}
+
+FieldOptions::OptionTargetType GetTargetType(const ServiceDescriptor*) {
+  return FieldOptions::TARGET_TYPE_SERVICE;
+}
+
+FieldOptions::OptionTargetType GetTargetType(const MethodDescriptor*) {
+  return FieldOptions::TARGET_TYPE_METHOD;
+}
+}  // namespace
 
 int CommandLineInterface::Run(int argc, const char* const argv[]) {
   Clear();
@@ -1189,31 +1272,51 @@ int CommandLineInterface::Run(int argc, const char* const argv[]) {
 
   bool validation_error = false;  // Defer exiting so we log more warnings.
 
-  VisitDescriptors(parsed_files, [&](const FieldDescriptor* field) {
-    if (HasReservedFieldNumber(field)) {
-      const char* error_link = nullptr;
-      validation_error = true;
-      std::string error;
-      if (field->number() >= FieldDescriptor::kFirstReservedNumber &&
-          field->number() <= FieldDescriptor::kLastReservedNumber) {
-        error = absl::Substitute(
-            "Field numbers $0 through $1 are reserved "
-            "for the protocol buffer library implementation.",
-            FieldDescriptor::kFirstReservedNumber,
-            FieldDescriptor::kLastReservedNumber);
-      } else {
-        error = absl::Substitute(
-            "Field number $0 is reserved for specific purposes.",
-            field->number());
-      }
-      if (error_link) {
-        absl::StrAppend(&error, "(See ", error_link, ")");
-      }
-      static_cast<DescriptorPool::ErrorCollector*>(error_collector.get())
-          ->RecordError(field->file()->name(), field->full_name(), nullptr,
-                        DescriptorPool::ErrorCollector::NUMBER, error);
-    }
-  });
+  for (auto& file : parsed_files) {
+    google::protobuf::internal::VisitDescriptors(
+        *file, [&](const FieldDescriptor& field) {
+          if (HasReservedFieldNumber(&field)) {
+            const char* error_link = nullptr;
+            validation_error = true;
+            std::string error;
+            if (field.number() >= FieldDescriptor::kFirstReservedNumber &&
+                field.number() <= FieldDescriptor::kLastReservedNumber) {
+              error = absl::Substitute(
+                  "Field numbers $0 through $1 are reserved "
+                  "for the protocol buffer library implementation.",
+                  FieldDescriptor::kFirstReservedNumber,
+                  FieldDescriptor::kLastReservedNumber);
+            } else {
+              error = absl::Substitute(
+                  "Field number $0 is reserved for specific purposes.",
+                  field.number());
+            }
+            if (error_link) {
+              absl::StrAppend(&error, "(See ", error_link, ")");
+            }
+            static_cast<DescriptorPool::ErrorCollector*>(error_collector.get())
+                ->RecordError(field.file()->name(), field.full_name(), nullptr,
+                              DescriptorPool::ErrorCollector::NUMBER, error);
+          }
+        });
+  }
+
+  // We visit one file at a time because we need to provide the file name for
+  // error messages. Usually we can get the file name from any descriptor with
+  // something like descriptor->file()->name(), but ExtensionRange does not
+  // support this.
+  for (const google::protobuf::FileDescriptor* file : parsed_files) {
+    FileDescriptorProto proto;
+    file->CopyTo(&proto);
+    google::protobuf::internal::VisitDescriptors(
+        *file, proto, [&](const auto& descriptor, const auto& proto) {
+          if (!ValidateTargetConstraints(proto.options(), *descriptor_pool,
+                                         *error_collector, file->name(),
+                                         GetTargetType(&descriptor))) {
+            validation_error = true;
+          }
+        });
+  }
 
 
   if (validation_error) {
@@ -2269,10 +2372,8 @@ Parse PROTO_FILES and generate output based on the options given:
                               with a non-zero exit code if any warnings
                               are generated.
   --print_free_field_numbers  Print the free field numbers of the messages
-                              defined in the given proto files. Groups share
-                              the same field number space with the parent
-                              message. Extension ranges are counted as
-                              occupied fields numbers.
+                              defined in the given proto files. Extension ranges
+                              are counted as occupied fields numbers.
   --enable_codegen_trace      Enables tracing which parts of protoc are
                               responsible for what codegen output. Not supported
                               by all backends or on all platforms.)";
@@ -2739,17 +2840,13 @@ typedef std::pair<int, int> FieldRange;
 void GatherOccupiedFieldRanges(
     const Descriptor* descriptor, absl::btree_set<FieldRange>* ranges,
     std::vector<const Descriptor*>* nested_messages) {
-  absl::flat_hash_set<const Descriptor*> groups;
   for (int i = 0; i < descriptor->field_count(); ++i) {
     const FieldDescriptor* fd = descriptor->field(i);
     ranges->insert(FieldRange(fd->number(), fd->number() + 1));
-    if (fd->type() == FieldDescriptor::TYPE_GROUP) {
-      groups.insert(fd->message_type());
-    }
   }
   for (int i = 0; i < descriptor->extension_range_count(); ++i) {
-    ranges->insert(FieldRange(descriptor->extension_range(i)->start,
-                              descriptor->extension_range(i)->end));
+    ranges->insert(FieldRange(descriptor->extension_range(i)->start_number(),
+                              descriptor->extension_range(i)->end_number()));
   }
   for (int i = 0; i < descriptor->reserved_range_count(); ++i) {
     ranges->insert(FieldRange(descriptor->reserved_range(i)->start,
@@ -2759,11 +2856,7 @@ void GatherOccupiedFieldRanges(
   // post-order strict.
   for (int i = 0; i < descriptor->nested_type_count(); ++i) {
     const Descriptor* nested_desc = descriptor->nested_type(i);
-    if (groups.find(nested_desc) != groups.end()) {
-      GatherOccupiedFieldRanges(nested_desc, ranges, nested_messages);
-    } else {
-      nested_messages->push_back(nested_desc);
-    }
+    nested_messages->push_back(nested_desc);
   }
 }
 

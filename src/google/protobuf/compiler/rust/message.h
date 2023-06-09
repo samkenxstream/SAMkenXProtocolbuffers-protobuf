@@ -1,5 +1,5 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2008 Google Inc.  All rights reserved.
+// Copyright 2023 Google LLC.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -12,7 +12,7 @@
 // copyright notice, this list of conditions and the following disclaimer
 // in the documentation and/or other materials provided with the
 // distribution.
-//     * Neither the name of Google Inc. nor the names of its
+//     * Neither the name of Google LLC. nor the names of its
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
@@ -28,46 +28,38 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef GOOGLE_PROTOBUF_ARENA_CONFIG_H__
-#define GOOGLE_PROTOBUF_ARENA_CONFIG_H__
+#ifndef GOOGLE_PROTOBUF_COMPILER_RUST_MESSAGE_H__
+#define GOOGLE_PROTOBUF_COMPILER_RUST_MESSAGE_H__
 
-#include <atomic>
-#include <cstddef>
+#include <memory>
+#include <vector>
 
-// Must be included last.
-#include "google/protobuf/port_def.inc"
+#include "google/protobuf/compiler/rust/accessors/accessors.h"
+#include "google/protobuf/compiler/rust/context.h"
+#include "google/protobuf/descriptor.h"
 
 namespace google {
 namespace protobuf {
-namespace internal {
-namespace arena_config_internal {
+namespace compiler {
+namespace rust {
 
-// We use an atomic here only for correctness so that we can read/write
-// concurrently. We don't have memory order requirements so we use relaxed
-// memory ordering.
-PROTOBUF_EXPORT extern std::atomic<size_t> default_arena_max_block_size;
+class MessageGenerator final {
+ public:
+  explicit MessageGenerator(Context<Descriptor> msg);
 
-}  // namespace arena_config_internal
+  // Generates code for a particular message in `.pb.rs`.
+  void GenerateRs(Context<Descriptor> msg);
 
-// The default value to use for DefaultArenaMaxBlockSize when
-// SetDefaultArenaMaxBlockSize hasn't been called.
-PROTOBUF_EXPORT extern const size_t kDefaultDefaultArenaMaxBlockSize;
+  // Generates code for a particular message in `.pb.thunk.cc`.
+  void GenerateThunksCc(Context<Descriptor> msg);
 
-// The default value to use for arena max block size when no value is provided
-// in ArenaOptions.
-inline size_t GetDefaultArenaMaxBlockSize() {
-  return arena_config_internal::default_arena_max_block_size.load(
-      std::memory_order_relaxed);
-}
-inline void SetDefaultArenaMaxBlockSize(size_t default_arena_max_block_size) {
-  return arena_config_internal::default_arena_max_block_size.store(
-      default_arena_max_block_size, std::memory_order_relaxed);
-}
+ private:
+  std::vector<std::unique_ptr<AccessorGenerator>> accessors_;
+};
 
-}  // namespace internal
+}  // namespace rust
+}  // namespace compiler
 }  // namespace protobuf
 }  // namespace google
 
-#include "google/protobuf/port_undef.inc"
-
-#endif  // GOOGLE_PROTOBUF_ARENA_CONFIG_H__
+#endif  // GOOGLE_PROTOBUF_COMPILER_RUST_MESSAGE_H__

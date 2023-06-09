@@ -76,24 +76,23 @@ namespace google {
 namespace protobuf {
 namespace compiler {
 namespace cpp {
-
 namespace {
-
-static const char kAnyMessageName[] = "Any";
-static const char kAnyProtoFile[] = "google/protobuf/any.proto";
+constexpr absl::string_view kAnyMessageName = "Any";
+constexpr absl::string_view kAnyProtoFile = "google/protobuf/any.proto";
 
 std::string DotsToColons(absl::string_view name) {
   return absl::StrReplaceAll(name, {{".", "::"}});
 }
 
 static const char* const kKeywordList[] = {
-    //
+    // clang-format off
     "NULL",
     "alignas",
     "alignof",
     "and",
     "and_eq",
     "asm",
+    "assert",
     "auto",
     "bitand",
     "bitor",
@@ -181,6 +180,7 @@ static const char* const kKeywordList[] = {
     "co_return",
     "co_yield",
     "requires",
+    // clang-format on
 };
 
 const absl::flat_hash_set<absl::string_view>& Keywords() {
@@ -202,6 +202,10 @@ std::string IntTypeName(const Options& options, absl::string_view type) {
 
 
 }  // namespace
+
+bool IsRarelyPresent(const FieldDescriptor* field, const Options& options) {
+  return false;
+}
 
 bool IsLazy(const FieldDescriptor* field, const Options& options,
             MessageSCCAnalyzer* scc_analyzer) {
@@ -255,18 +259,17 @@ void SetCommonMessageDataVariables(
 
 absl::flat_hash_map<absl::string_view, std::string> UnknownFieldsVars(
     const Descriptor* desc, const Options& opts) {
-  std::string proto_ns = ProtobufNamespace(opts);
-
   std::string unknown_fields_type;
   std::string default_instance;
   if (UseUnknownFieldSet(desc->file(), opts)) {
-    unknown_fields_type = absl::StrCat("::", proto_ns, "::UnknownFieldSet");
+    unknown_fields_type =
+        absl::StrCat("::", ProtobufNamespace(opts), "::UnknownFieldSet");
     default_instance = absl::StrCat(unknown_fields_type, "::default_instance");
   } else {
     unknown_fields_type =
         PrimitiveTypeName(opts, FieldDescriptor::CPPTYPE_STRING);
-    default_instance =
-        absl::StrCat("::", proto_ns, "::internal::GetEmptyString");
+    default_instance = absl::StrCat("::", ProtobufNamespace(opts),
+                                    "::internal::GetEmptyString");
   }
 
   return {
@@ -455,18 +458,7 @@ std::string Namespace(absl::string_view package) {
 
 std::string Namespace(const FileDescriptor* d) { return Namespace(d, {}); }
 std::string Namespace(const FileDescriptor* d, const Options& options) {
-  std::string ns = Namespace(d->package());
-  if (IsWellKnownMessage(d) && options.opensource_runtime) {
-    // Written with string concatenation to prevent rewriting of
-    // ::google::protobuf.
-    constexpr absl::string_view prefix =
-        "::google::"  // prevent clang-format reflowing
-        "protobuf";
-    absl::string_view new_ns(ns);
-    absl::ConsumePrefix(&new_ns, prefix);
-    return absl::StrCat("::PROTOBUF_NAMESPACE_ID", new_ns);
-  }
-  return ns;
+  return Namespace(d->package());
 }
 
 std::string Namespace(const Descriptor* d) { return Namespace(d, {}); }
@@ -1159,28 +1151,14 @@ void NamespaceOpener::ChangeTo(absl::string_view name) {
   }
 
   for (size_t i = name_stack_.size(); i > common_idx; i--) {
-    const auto& ns = name_stack_[i - 1];
-    if (ns == "PROTOBUF_NAMESPACE_ID") {
-      p_->Emit(R"cc(
-        PROTOBUF_NAMESPACE_CLOSE
-      )cc");
-    } else {
-      p_->Emit({{"ns", ns}}, R"(
-          }  // namespace $ns$
-        )");
-    }
+    p_->Emit({{"ns", name_stack_[i - 1]}}, R"(
+      }  // namespace $ns$
+    )");
   }
   for (size_t i = common_idx; i < new_stack.size(); ++i) {
-    const auto& ns = new_stack[i];
-    if (ns == "PROTOBUF_NAMESPACE_ID") {
-      p_->Emit(R"cc(
-        PROTOBUF_NAMESPACE_OPEN
-      )cc");
-    } else {
-      p_->Emit({{"ns", ns}}, R"(
-        namespace $ns$ {
-      )");
-    }
+    p_->Emit({{"ns", new_stack[i]}}, R"(
+      namespace $ns$ {
+    )");
   }
 
   name_stack_ = std::move(new_stack);
@@ -1422,8 +1400,8 @@ bool GetBootstrapBasename(const Options& options, absl::string_view basename,
       new absl::flat_hash_map<absl::string_view, std::string>{
           {"net/proto2/proto/descriptor",
            "third_party/protobuf/descriptor"},
-          {"net/proto2/compiler/proto/plugin",
-           "net/proto2/compiler/proto/plugin"},
+          {"third_party/protobuf/compiler/plugin",
+           "third_party/protobuf/compiler/plugin"},
           {"net/proto2/compiler/proto/profile",
            "net/proto2/compiler/proto/profile_bootstrap"},
       };
@@ -1672,6 +1650,17 @@ std::vector<io::Printer::Sub> AnnotatedAccessors(
   }
 
   return vars;
+}
+
+bool IsFileDescriptorProto(const FileDescriptor* file, const Options& options) {
+  if (Namespace(file, options) !=
+      absl::StrCat("::", ProtobufNamespace(options))) {
+    return false;
+  }
+  for (int i = 0; i < file->message_type_count(); ++i) {
+    if (file->message_type(i)->name() == "FileDescriptorProto") return true;
+  }
+  return false;
 }
 
 }  // namespace cpp

@@ -64,7 +64,7 @@ final class ManifestSchemaFactory implements SchemaFactory {
             messageInfo.getDefaultInstance());
       }
       return MessageSetSchema.newSchema(
-          SchemaUtil.proto2UnknownFieldSetSchema(),
+          SchemaUtil.unknownFieldSetFullSchema(),
           ExtensionSchemas.full(),
           messageInfo.getDefaultInstance());
     }
@@ -74,7 +74,7 @@ final class ManifestSchemaFactory implements SchemaFactory {
 
   private static <T> Schema<T> newSchema(Class<T> messageType, MessageInfo messageInfo) {
     if (GeneratedMessageLite.class.isAssignableFrom(messageType)) {
-      return isProto2(messageInfo)
+      return allowExtensions(messageInfo)
           ? MessageSchema.newSchema(
               messageType,
               messageInfo,
@@ -92,13 +92,13 @@ final class ManifestSchemaFactory implements SchemaFactory {
               /* extensionSchema= */ null,
               MapFieldSchemas.lite());
     }
-    return isProto2(messageInfo)
+    return allowExtensions(messageInfo)
         ? MessageSchema.newSchema(
             messageType,
             messageInfo,
             NewInstanceSchemas.full(),
             ListFieldSchema.full(),
-            SchemaUtil.proto2UnknownFieldSetSchema(),
+            SchemaUtil.unknownFieldSetFullSchema(),
             ExtensionSchemas.full(),
             MapFieldSchemas.full())
         : MessageSchema.newSchema(
@@ -106,13 +106,18 @@ final class ManifestSchemaFactory implements SchemaFactory {
             messageInfo,
             NewInstanceSchemas.full(),
             ListFieldSchema.full(),
-            SchemaUtil.proto3UnknownFieldSetSchema(),
+            SchemaUtil.unknownFieldSetFullSchema(),
             /* extensionSchema= */ null,
             MapFieldSchemas.full());
   }
 
-  private static boolean isProto2(MessageInfo messageInfo) {
-    return messageInfo.getSyntax() == ProtoSyntax.PROTO2;
+  private static boolean allowExtensions(MessageInfo messageInfo) {
+    switch (messageInfo.getSyntax()) {
+      case PROTO3:
+        return false;
+      default:
+        return true;
+    }
   }
 
   private static MessageInfoFactory getDefaultMessageInfoFactory() {

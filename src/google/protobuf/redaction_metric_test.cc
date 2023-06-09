@@ -1,5 +1,5 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2023 Google Inc.  All rights reserved.
+// Copyright 2008 Google Inc.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,30 +28,36 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use unittest_proto::proto2_unittest::TestAllTypes;
+// Test for the redaction metric.
+// Because the metric is a global variable, we have to put the tests in a
+// separate file to more accurately test their values.
 
-#[test]
-fn test_optional_bool() {
-    let mut test_all_types: TestAllTypes = TestAllTypes::new();
-    test_all_types.optional_bool_set(Some(true));
-    assert_eq!(test_all_types.optional_bool(), Some(true));
+#include <cstdint>
+#include <string>
 
-    test_all_types.optional_bool_set(Some(false));
-    assert_eq!(test_all_types.optional_bool(), Some(false));
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+#include "absl/strings/str_cat.h"
+#include "google/protobuf/text_format.h"
+#include "google/protobuf/unittest.pb.h"
 
-    test_all_types.optional_bool_set(None);
-    assert_eq!(test_all_types.optional_bool(), None);
+namespace google {
+namespace protobuf {
+
+namespace {
+
+using ::testing::HasSubstr;
+
+TEST(TextFormatParsingMetricsTest, MetricsTest) {
+  std::string value_replacement = "[REDACTED]";
+  protobuf_unittest::RedactedFields proto;
+  proto.set_optional_redacted_string("foo");
+  int64_t before = internal::GetRedactedFieldCount();
+  EXPECT_THAT(absl::StrCat(proto), HasSubstr(value_replacement));
+  int64_t after = internal::GetRedactedFieldCount();
+  EXPECT_EQ(after, before + 1);
 }
 
-#[test]
-fn test_optional_int64() {
-    let mut test_all_types: TestAllTypes = TestAllTypes::new();
-    test_all_types.optional_int64_set(Some(10));
-    assert_eq!(test_all_types.optional_int64(), Some(10));
-
-    test_all_types.optional_int64_set(Some(-10));
-    assert_eq!(test_all_types.optional_int64(), Some(-10));
-
-    test_all_types.optional_int64_set(None);
-    assert_eq!(test_all_types.optional_int64(), None);
-}
+}  // namespace
+}  // namespace protobuf
+}  // namespace google

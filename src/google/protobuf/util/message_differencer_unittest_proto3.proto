@@ -1,5 +1,5 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2008 Google Inc.  All rights reserved.
+// Copyright 2023 Google Inc.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,26 +28,17 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "google/protobuf/arena_config.h"
+// This file contains messages for testing repeated field comparison
+// LINT: ALLOW_GROUPS
 
-#include <atomic>
-#include <cstddef>
+syntax = "proto3";
 
-// Must be included last.
-#include "google/protobuf/port_def.inc"
+package proto3_unittest;
 
-namespace google {
-namespace protobuf {
-namespace internal {
+option optimize_for = SPEED;
 
-PROTOBUF_CONSTINIT const size_t kDefaultDefaultArenaMaxBlockSize = 32 << 10;
-
-namespace arena_config_internal {
-
-std::atomic<size_t> default_arena_max_block_size{
-    kDefaultDefaultArenaMaxBlockSize};
-
-}  // namespace arena_config_internal
-}  // namespace internal
-}  // namespace protobuf
-}  // namespace google
+message TestNoPresenceField {
+  bool no_presence_bool = 1;
+  TestNoPresenceField no_presence_nested = 2;
+  repeated TestNoPresenceField no_presence_repeated_nested = 3;
+}

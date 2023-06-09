@@ -43,7 +43,6 @@
 #include "google/protobuf/arena_align.h"
 #include "google/protobuf/arena_allocation_policy.h"
 #include "google/protobuf/arena_cleanup.h"
-#include "google/protobuf/arena_config.h"
 #include "google/protobuf/arenaz_sampler.h"
 #include "google/protobuf/port.h"
 #include "google/protobuf/serial_arena.h"
@@ -126,6 +125,8 @@ class PROTOBUF_EXPORT ThreadSafeArena {
 
   void* AllocateFromStringBlock();
 
+  std::vector<void*> PeekCleanupListForTesting();
+
  private:
   friend class ArenaBenchmark;
   friend class TcParser;
@@ -204,6 +205,8 @@ class PROTOBUF_EXPORT ThreadSafeArena {
   // create a big enough block to accommodate n bytes.
   SerialArena* GetSerialArenaFallback(size_t n);
 
+  SerialArena* GetSerialArena();
+
   template <AllocationClient alloc_client = AllocationClient::kDefault>
   void* AllocateAlignedFallback(size_t n);
 
@@ -257,9 +260,9 @@ class PROTOBUF_EXPORT ThreadSafeArena {
   // iOS does not support __thread keyword so we use a custom thread local
   // storage class we implemented.
   static ThreadCache& thread_cache();
-#elif defined(PROTOBUF_USE_DLLS)
-  // Thread local variables cannot be exposed through DLL interface but we can
-  // wrap them in static functions.
+#elif defined(PROTOBUF_USE_DLLS) && defined(_MSC_VER)
+  // Thread local variables cannot be exposed through MSVC DLL interface but we
+  // can wrap them in static functions.
   static ThreadCache& thread_cache();
 #else
   PROTOBUF_CONSTINIT static PROTOBUF_THREAD_LOCAL ThreadCache thread_cache_;

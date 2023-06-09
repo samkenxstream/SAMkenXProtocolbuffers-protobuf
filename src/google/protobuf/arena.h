@@ -36,6 +36,7 @@
 #include <limits>
 #include <type_traits>
 #include <utility>
+#include <vector>
 #if defined(_MSC_VER) && !defined(_LIBCPP_STD_VER) && !_HAS_EXCEPTIONS
 // Work around bugs in MSVC <typeinfo> header when _HAS_EXCEPTIONS=0.
 #include <exception>
@@ -49,7 +50,6 @@ using type_info = ::type_info;
 
 #include "absl/meta/type_traits.h"
 #include "google/protobuf/arena_align.h"
-#include "google/protobuf/arena_config.h"
 #include "google/protobuf/port.h"
 #include "google/protobuf/serial_arena.h"
 #include "google/protobuf/thread_safe_arena.h"
@@ -121,7 +121,7 @@ struct ArenaOptions {
   // individual arena allocation request occurs with a size larger than this
   // maximum). Requested block sizes increase up to this value, then remain
   // here.
-  size_t max_block_size = internal::GetDefaultArenaMaxBlockSize();
+  size_t max_block_size = internal::AllocationPolicy::kDefaultMaxBlockSize;
 
   // An initial block of memory for the arena to use, or nullptr for none. If
   // provided, the block must live at least as long as the arena itself. The
@@ -666,6 +666,14 @@ class PROTOBUF_EXPORT PROTOBUF_ALIGNAS(8) Arena final {
   void* AllocateForArray(size_t n);
   void* AllocateAlignedWithCleanup(size_t n, size_t align,
                                    void (*destructor)(void*));
+
+  // Test only API.
+  // It returns the objects that are in the cleanup list for the current
+  // SerialArena. This API is meant for tests that want to see if something was
+  // added or not to the cleanup list. Sometimes adding something to the cleanup
+  // list has no visible side effect so peeking into the list is the only way to
+  // test.
+  std::vector<void*> PeekCleanupListForTesting();
 
   template <typename Type>
   friend class internal::GenericTypeHandler;

@@ -28,29 +28,12 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef GOOGLE_PROTOBUF_COMPILER_RUST_UPB_KERNEL_H__
-#define GOOGLE_PROTOBUF_COMPILER_RUST_UPB_KERNEL_H__
+/// Tests covering nested messages.
 
-#include "google/protobuf/descriptor.h"
-#include "google/protobuf/io/printer.h"
-
-namespace google {
-namespace protobuf {
-namespace compiler {
-namespace rust {
-
-class UpbKernel {
- public:
-  UpbKernel() = default;
-  UpbKernel(const UpbKernel&) = delete;
-  UpbKernel& operator=(const UpbKernel&) = delete;
-
-  void Generate(const FileDescriptor* file, google::protobuf::io::Printer& p) const;
-};
-
-}  // namespace rust
-}  // namespace compiler
-}  // namespace protobuf
-}  // namespace google
-
-#endif  // GOOGLE_PROTOBUF_COMPILER_RUST_UPB_KERNEL_H__
+#[test]
+fn test_nested_messages_accesible() {
+    let _parent: unittest_proto::proto2_unittest::TestAllTypes;
+    let _child: unittest_proto::proto2_unittest::TestAllTypes_::NestedMessage;
+    unittest_proto::proto2_unittest::TestChildExtensionData_::
+    NestedTestAllExtensionsData_::NestedDynamicExtensions::new();
+}

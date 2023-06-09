@@ -28,7 +28,9 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <numeric>
 #include <string>
 #include <type_traits>
@@ -1389,13 +1391,26 @@ const char* TcParser::PackedEnumSmallRange(PROTOBUF_TC_PARAM_DECL) {
   auto* field = &RefAt<RepeatedField<int32_t>>(msg, data.offset());
   const uint8_t max = data.aux_idx();
 
-  return ctx->ReadPackedVarint(ptr, [=](int32_t v) {
-    if (PROTOBUF_PREDICT_FALSE(min > v || v > max)) {
-      AddUnknownEnum(msg, table, FastDecodeTag(saved_tag), v);
-    } else {
-      field->Add(v);
-    }
-  });
+  return ctx->ReadPackedVarint(
+      ptr,
+      [=](int32_t v) {
+        if (PROTOBUF_PREDICT_FALSE(min > v || v > max)) {
+          AddUnknownEnum(msg, table, FastDecodeTag(saved_tag), v);
+        } else {
+          // The size_callback below ensures that we have enough capacity.
+          field->AddAlreadyReserved(v);
+        }
+      },
+      /*size_callback=*/
+      [=](int32_t size_bytes) {
+        // For enums that fit in one varint byte, optimistically assume that all
+        // the values are one byte long (i.e. no large unknown values).  If so,
+        // we know exactly how many values we're going to get.
+        int64_t new_size =
+            std::min(int64_t{field->size()} + size_bytes,
+                     int64_t{std::numeric_limits<int32_t>::max()});
+        field->Reserve(static_cast<int32_t>(new_size));
+      });
 }
 
 PROTOBUF_NOINLINE const char* TcParser::FastEr0P1(PROTOBUF_TC_PARAM_DECL) {
@@ -2100,6 +2115,15 @@ bool TcParser::MpVerifyUtf8(absl::string_view wire_bytes,
 #endif  // NDEBUG
   return true;
 }
+bool TcParser::MpVerifyUtf8(const absl::Cord& wire_bytes,
+                            const TcParseTableBase* table,
+                            const FieldEntry& entry, uint16_t xform_val) {
+  switch (xform_val) {
+    default:
+      ABSL_DCHECK_EQ(xform_val, 0);
+      return true;
+  }
+}
 
 template <bool is_split>
 PROTOBUF_NOINLINE const char* TcParser::MpString(PROTOBUF_TC_PARAM_DECL) {
@@ -2144,10 +2168,29 @@ PROTOBUF_NOINLINE const char* TcParser::MpString(PROTOBUF_TC_PARAM_DECL) {
       break;
     }
 
-    case field_layout::kRepIString: {
-      ABSL_DCHECK(false);
+
+    case field_layout::kRepCord: {
+      absl::Cord* field;
+      if (is_oneof) {
+        if (need_init) {
+          field = new absl::Cord;
+          RefAt<absl::Cord*>(msg, entry.offset) = field;
+          Arena* arena = msg->GetArenaForAllocation();
+          if (arena) arena->Own(field);
+        } else {
+          field = RefAt<absl::Cord*>(msg, entry.offset);
+        }
+      } else {
+        field = &RefAt<absl::Cord>(base, entry.offset);
+      }
+      ptr = InlineCordParser(field, ptr, ctx);
+      if (!ptr) break;
+      is_valid = MpVerifyUtf8(*field, table, entry, xform_val);
       break;
     }
+
+    default:
+      PROTOBUF_ASSUME(false);
   }
 
   if (ptr == nullptr || !is_valid) {
@@ -2447,7 +2490,8 @@ void TcParser::WriteMapEntryAsUnknown(MessageLite* msg,
 
 PROTOBUF_ALWAYS_INLINE inline void TcParser::InitializeMapNodeEntry(
     void* obj, MapTypeCard type_card, UntypedMapBase& map,
-    const TcParseTableBase::FieldAux* aux) {
+    const TcParseTableBase::FieldAux* aux, bool is_key) {
+  (void)is_key;
   switch (type_card.cpp_type()) {
     case MapTypeCard::kBool:
       memset(obj, 0, sizeof(bool));
@@ -2497,7 +2541,7 @@ const char* ReadFixed(void* obj, const char* ptr) {
 const char* TcParser::ParseOneMapEntry(
     NodeBase* node, const char* ptr, ParseContext* ctx,
     const TcParseTableBase::FieldAux* aux, const TcParseTableBase* table,
-    const TcParseTableBase::FieldEntry& entry) {
+    const TcParseTableBase::FieldEntry& entry, Arena* arena) {
   using WFL = WireFormatLite;
 
   const auto map_info = aux[0].map_info;
@@ -2631,13 +2675,13 @@ PROTOBUF_NOINLINE const char* TcParser::MpMap(PROTOBUF_TC_PARAM_DECL) {
   while (true) {
     NodeBase* node = map.AllocNode(map_info.node_size_info);
 
-    InitializeMapNodeEntry(node->GetVoidKey(), map_info.key_type_card, map,
-                           aux);
+    InitializeMapNodeEntry(node->GetVoidKey(), map_info.key_type_card, map, aux,
+                           true);
     InitializeMapNodeEntry(node->GetVoidValue(map_info.node_size_info),
-                           map_info.value_type_card, map, aux);
+                           map_info.value_type_card, map, aux, false);
 
     ptr = ctx->ParseLengthDelimitedInlined(ptr, [&](const char* ptr) {
-      return ParseOneMapEntry(node, ptr, ctx, aux, table, entry);
+      return ParseOneMapEntry(node, ptr, ctx, aux, table, entry, map.arena());
     });
 
     if (PROTOBUF_PREDICT_TRUE(ptr != nullptr)) {

@@ -1,5 +1,5 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2023 Google Inc.  All rights reserved.
+// Copyright 2008 Google Inc.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,41 +28,24 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-/// Tests covering accessors for singular bool and int64 fields.
-use unittest_proto::proto2_unittest::TestAllTypes;
+#include "absl/strings/string_view.h"
+#include "google/protobuf/compiler/allowlists/allowlist.h"
+#include "google/protobuf/compiler/allowlists/allowlists.h"
 
-#[test]
-fn test_optional_int64_accessors() {
-    let mut msg = TestAllTypes::new();
-    assert_eq!(msg.optional_int64(), None);
+namespace google {
+namespace protobuf {
+namespace compiler {
 
-    msg.optional_int64_set(Some(42));
-    assert_eq!(msg.optional_int64(), Some(42));
+// NOTE: Allowlists in this file are not accepting new entries unless otherwise
+// specified.
+// TODO(b/136084631): Remove when empty.
+static constexpr auto kUnusedImports = internal::MakeAllowlist({
+// Intentionally left blank.
+});
 
-    msg.optional_int64_set(None);
-    assert_eq!(msg.optional_int64(), None);
+bool IsUnusedImportFile(absl::string_view file) {
+  return kUnusedImports.Allows(file);
 }
-
-#[test]
-fn test_optional_bool_accessors() {
-    let mut msg = TestAllTypes::new();
-    assert_eq!(msg.optional_bool(), None);
-
-    msg.optional_bool_set(Some(true));
-    assert_eq!(msg.optional_bool(), Some(true));
-
-    msg.optional_bool_set(None);
-    assert_eq!(msg.optional_bool(), None);
-}
-
-#[test]
-fn test_optional_bytes_accessors() {
-    let mut msg = TestAllTypes::new();
-    assert_eq!(msg.optional_bytes(), None);
-
-    msg.optional_bytes_set(Some(b"accessors_test"));
-    assert_eq!(msg.optional_bytes().unwrap(), b"accessors_test");
-
-    msg.optional_bytes_set(None);
-    assert_eq!(msg.optional_bytes(), None);
-}
+}  // namespace compiler
+}  // namespace protobuf
+}  // namespace google
