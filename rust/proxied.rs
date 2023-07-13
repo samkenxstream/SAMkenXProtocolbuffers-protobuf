@@ -1,5 +1,5 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2023 Google Inc.  All rights reserved.
+// Copyright 2023 Google LLC.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -12,7 +12,7 @@
 // copyright notice, this list of conditions and the following disclaimer
 // in the documentation and/or other materials provided with the
 // distribution.
-//     * Neither the name of Google Inc. nor the names of its
+//     * Neither the name of Google LLC. nor the names of its
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
@@ -27,10 +27,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-// copybara:strip_begin
-// See http://go/rust-proxy-reference-types for design discussion.
-// copybara:strip_end
 
 //! Operating on borrowed data owned by a message is a central concept in
 //! Protobuf (and Rust in general). The way this is normally accomplished in
@@ -71,40 +67,41 @@
 //! implemented the concept of "proxy" types. Proxy types are a reference-like
 //! indirection between the user and the internal memory representation.
 
+use crate::__internal::Private;
 use std::fmt::Debug;
 use std::marker::{Send, Sync};
 
-/// Represents a type that can be accessed through a reference-like proxy.
+/// A type that can be accessed through a reference-like proxy.
 ///
 /// An instance of a `Proxied` can be accessed
 /// immutably via `Proxied::View` and mutably via `Proxied::Mut`.
 ///
 /// All Protobuf field types implement `Proxied`.
 pub trait Proxied {
-    /// Represents a shared accessor of a `T` through an `&'a T`-like proxy
-    /// type.
+    /// The proxy type that provides shared access to a `T`, like a `&'a T`.
     ///
     /// Most code should use the type alias [`View`].
-    type View<'a>: ViewFor<'a, Self> + Copy + Send + Sync + Unpin + Sized + Debug
+    type View<'a>: ViewProxy<'a, Proxied = Self> + Copy + Send + SettableValue<Self>
     where
         Self: 'a;
 
-    /// Represents a unique mutator of a `T` through an `&'a mut T`-like proxy
-    /// type.
+    /// The proxy type that provides exclusive mutable access to a `T`, like a
+    /// `&'a mut T`.
     ///
     /// Most code should use the type alias [`Mut`].
-    type Mut<'a>: MutFor<'a, Self> + Sync + Sized + Debug
+    type Mut<'a>: MutProxy<'a, Proxied = Self>
     where
         Self: 'a;
 }
 
-/// Represents a shared accessor of a `T` through an `&'a T`-like proxy type.
+/// A proxy type that provides shared access to a `T`, like a `&'a T`.
 ///
 /// This is more concise than fully spelling the associated type.
 #[allow(dead_code)]
 pub type View<'a, T> = <T as Proxied>::View<'a>;
 
-/// Represents a unique mutator of a `T` through an `&'a mut T`-like proxy type.
+/// A proxy type that provides exclusive mutable access to a `T`, like a
+/// `&'a mut T`.
 ///
 /// This is more concise than fully spelling the associated type.
 #[allow(dead_code)]
@@ -114,7 +111,9 @@ pub type Mut<'a, T> = <T as Proxied>::Mut<'a>;
 ///
 /// This trait is intentionally made non-object-safe to prevent a potential
 /// future incompatible change.
-pub trait ViewFor<'a, T: 'a + Proxied + ?Sized>: 'a + Sized {
+pub trait ViewProxy<'a>: 'a + Sized + Sync + Unpin + Sized + Debug {
+    type Proxied: 'a + Proxied + ?Sized;
+
     /// Converts a borrow into a `View` with the lifetime of that borrow.
     ///
     /// In non-generic code we don't need to use `as_view` because the proxy
@@ -134,7 +133,7 @@ pub trait ViewFor<'a, T: 'a + Proxied + ?Sized>: 'a + Sized {
     /// ```
     ///
     /// [invariant]: https://doc.rust-lang.org/nomicon/subtyping.html#variance
-    fn as_view(&self) -> View<'_, T>;
+    fn as_view(&self) -> View<'_, Self::Proxied>;
 
     /// Converts into a `View` with a potentially shorter lifetime.
     ///
@@ -161,7 +160,7 @@ pub trait ViewFor<'a, T: 'a + Proxied + ?Sized>: 'a + Sized {
     /// ```
     ///
     /// [invariant]: https://doc.rust-lang.org/nomicon/subtyping.html#variance
-    fn into_view<'shorter>(self) -> View<'shorter, T>
+    fn into_view<'shorter>(self) -> View<'shorter, Self::Proxied>
     where
         'a: 'shorter;
 }
@@ -170,7 +169,23 @@ pub trait ViewFor<'a, T: 'a + Proxied + ?Sized>: 'a + Sized {
 ///
 /// This trait is intentionally made non-object-safe to prevent a potential
 /// future incompatible change.
-pub trait MutFor<'a, T: 'a + Proxied + ?Sized>: ViewFor<'a, T> {
+pub trait MutProxy<'a>: ViewProxy<'a> {
+    /// Gets an immutable view of this field. This is shorthand for `as_view`.
+    ///
+    /// This provides a shorter lifetime than `into_view` but can also be called
+    /// multiple times - if the result of `get` is not living long enough
+    /// for your use, use that instead.
+    fn get(&self) -> View<'_, Self::Proxied> {
+        self.as_view()
+    }
+
+    /// Sets this field to the given `val`.
+    ///
+    /// Any borrowed data from `val` will be cloned.
+    fn set(&mut self, val: impl SettableValue<Self::Proxied>) {
+        val.set_on(Private, self.as_mut())
+    }
+
     /// Converts a borrow into a `Mut` with the lifetime of that borrow.
     ///
     /// This function enables calling multiple methods consuming `self`, for
@@ -184,7 +199,7 @@ pub trait MutFor<'a, T: 'a + Proxied + ?Sized>: ViewFor<'a, T> {
     ///
     /// `as_mut` is also useful in generic code to explicitly perform the
     /// operation that in concrete code coercion would perform implicitly.
-    fn as_mut(&mut self) -> Mut<'_, T>;
+    fn as_mut(&mut self) -> Mut<'_, Self::Proxied>;
 
     /// Converts into a `Mut` with a potentially shorter lifetime.
     ///
@@ -208,16 +223,80 @@ pub trait MutFor<'a, T: 'a + Proxied + ?Sized>: ViewFor<'a, T> {
     /// ```
     ///
     /// [invariant]: https://doc.rust-lang.org/nomicon/subtyping.html#variance
-    fn into_mut<'shorter>(self) -> Mut<'shorter, T>
+    fn into_mut<'shorter>(self) -> Mut<'shorter, Self::Proxied>
     where
         'a: 'shorter;
+}
+
+/// `Proxied` types that can be optionally set or unset.
+///
+/// All scalar and message types implement `ProxiedWithPresence`, while repeated
+/// types don't.
+pub trait ProxiedWithPresence: Proxied {
+    /// The data necessary to store a present field mutator proxying `Self`.
+    /// This is the contents of `PresentField<'a, Self>`.
+    type PresentMutData<'a>: MutProxy<'a, Proxied = Self>;
+
+    /// The data necessary to store an absent field mutator proxying `Self`.
+    /// This is the contents of `AbsentField<'a, Self>`.
+    type AbsentMutData<'a>: ViewProxy<'a, Proxied = Self>;
+
+    /// Clears a present field.
+    fn clear_present_field<'a>(
+        present_mutator: Self::PresentMutData<'a>,
+    ) -> Self::AbsentMutData<'a>;
+
+    /// Sets an absent field to its default value.
+    ///
+    /// This can be more efficient than setting with a default value, e.g.
+    /// a default submessage could share resources with the parent message.
+    fn set_absent_to_default<'a>(
+        absent_mutator: Self::AbsentMutData<'a>,
+    ) -> Self::PresentMutData<'a>;
+}
+
+/// Values that can be used to set a field of `T`.
+pub trait SettableValue<T>: Sized
+where
+    T: Proxied + ?Sized,
+{
+    /// Consumes `self` to set the given mutator to its value.
+    #[doc(hidden)]
+    fn set_on(self, _private: Private, mutator: Mut<'_, T>);
+
+    /// Consumes `self` and `absent_mutator` to set the given empty field to
+    /// a value.
+    #[doc(hidden)]
+    fn set_on_absent<'a>(
+        self,
+        _private: Private,
+        absent_mutator: T::AbsentMutData<'a>,
+    ) -> T::PresentMutData<'a>
+    where
+        T: ProxiedWithPresence,
+    {
+        let mut present = T::set_absent_to_default(absent_mutator);
+        self.set_on(Private, present.as_mut());
+        present
+    }
+
+    /// Consumes `self` and `present_mutator` to set the given present field
+    /// to a value.
+    #[doc(hidden)]
+    fn set_on_present(self, _private: Private, mut present_mutator: T::PresentMutData<'_>)
+    where
+        T: ProxiedWithPresence,
+    {
+        self.set_on(Private, present_mutator.as_mut())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::borrow::Cow;
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, Default, PartialEq)]
     struct MyProxied {
         val: String,
     }
@@ -248,7 +327,9 @@ mod tests {
         }
     }
 
-    impl<'a> ViewFor<'a, MyProxied> for MyProxiedView<'a> {
+    impl<'a> ViewProxy<'a> for MyProxiedView<'a> {
+        type Proxied = MyProxied;
+
         fn as_view(&self) -> View<'a, MyProxied> {
             *self
         }
@@ -266,13 +347,9 @@ mod tests {
         my_proxied_ref: &'a mut MyProxied,
     }
 
-    impl MyProxiedMut<'_> {
-        fn set_val(&mut self, new_val: String) {
-            self.my_proxied_ref.val = new_val;
-        }
-    }
+    impl<'a> ViewProxy<'a> for MyProxiedMut<'a> {
+        type Proxied = MyProxied;
 
-    impl<'a> ViewFor<'a, MyProxied> for MyProxiedMut<'a> {
         fn as_view(&self) -> View<'_, MyProxied> {
             MyProxiedView { my_proxied_ref: self.my_proxied_ref }
         }
@@ -284,7 +361,7 @@ mod tests {
         }
     }
 
-    impl<'a> MutFor<'a, MyProxied> for MyProxiedMut<'a> {
+    impl<'a> MutProxy<'a> for MyProxiedMut<'a> {
         fn as_mut(&mut self) -> Mut<'_, MyProxied> {
             MyProxiedMut { my_proxied_ref: self.my_proxied_ref }
         }
@@ -294,6 +371,33 @@ mod tests {
             'a: 'shorter,
         {
             self
+        }
+    }
+
+    impl SettableValue<MyProxied> for MyProxiedView<'_> {
+        fn set_on(self, _private: Private, mutator: Mut<MyProxied>) {
+            mutator.my_proxied_ref.val = self.my_proxied_ref.val.clone();
+        }
+    }
+
+    impl SettableValue<MyProxied> for String {
+        fn set_on(self, _private: Private, mutator: Mut<MyProxied>) {
+            mutator.my_proxied_ref.val = self;
+        }
+    }
+
+    impl SettableValue<MyProxied> for &'_ str {
+        fn set_on(self, _private: Private, mutator: Mut<MyProxied>) {
+            mutator.my_proxied_ref.val.replace_range(.., self);
+        }
+    }
+
+    impl SettableValue<MyProxied> for Cow<'_, str> {
+        fn set_on(self, _private: Private, mutator: Mut<MyProxied>) {
+            match self {
+                Cow::Owned(x) => x.set_on(Private, mutator),
+                Cow::Borrowed(x) => x.set_on(Private, mutator),
+            }
         }
     }
 
@@ -311,7 +415,7 @@ mod tests {
         let mut my_proxied = MyProxied { val: "Hello World".to_string() };
 
         let mut my_mut = my_proxied.as_mut();
-        my_mut.set_val("Hello indeed".to_string());
+        my_mut.set("Hello indeed".to_string());
 
         let val_after_set = my_mut.as_view().val().to_string();
         assert_eq!(my_proxied.val, val_after_set);
@@ -440,5 +544,18 @@ mod tests {
             // lifetime.
             reborrow_generic_mut_into_mut::<MyProxied>(my_mut, other_mut);
         }
+    }
+
+    #[test]
+    fn test_set() {
+        let mut my_proxied = MyProxied::default();
+        my_proxied.as_mut().set("hello");
+        assert_eq!(my_proxied.as_view().val(), "hello");
+
+        my_proxied.as_mut().set(String::from("hello2"));
+        assert_eq!(my_proxied.as_view().val(), "hello2");
+
+        my_proxied.as_mut().set(Cow::Borrowed("hello3"));
+        assert_eq!(my_proxied.as_view().val(), "hello3");
     }
 }

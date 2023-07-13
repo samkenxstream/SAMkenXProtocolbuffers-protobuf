@@ -547,8 +547,10 @@ MessageGenerator::MessageGenerator(
     }
   }
 
+  const size_t initial_size = optimized_order_.size();
   message_layout_helper_->OptimizeLayout(&optimized_order_, options_,
                                          scc_analyzer_);
+  ABSL_CHECK_EQ(initial_size, optimized_order_.size());
 
   // This message has hasbits iff one or more fields need one.
   for (auto field : optimized_order_) {
@@ -1820,6 +1822,9 @@ void MessageGenerator::GenerateClassDefinition(io::Printer* p) {
   if (IsAnyMessage(descriptor_, options_)) {
     format("::$proto_ns$::internal::AnyMetadata _any_metadata_;\n");
   }
+
+  // For detecting when concurrent accessor calls cause races.
+  format("PROTOBUF_TSAN_DECLARE_MEMBER;\n");
 
   format.Outdent();
   format("};\n");
@@ -3994,12 +3999,6 @@ void MessageGenerator::GenerateSerializeWithCachedSizesBodyShuffled(
 
   std::vector<const FieldDescriptor*> ordered_fields =
       SortFieldsByNumber(descriptor_);
-  ordered_fields.erase(
-      std::remove_if(ordered_fields.begin(), ordered_fields.end(),
-                     [this](const FieldDescriptor* f) {
-                       return !IsFieldUsed(f, options_);
-                     }),
-      ordered_fields.end());
 
   std::vector<const Descriptor::ExtensionRange*> sorted_extensions;
   sorted_extensions.reserve(descriptor_->extension_range_count());

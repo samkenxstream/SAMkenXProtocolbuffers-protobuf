@@ -233,7 +233,7 @@ void StripSourceCodeInfo(std::vector<std::vector<int>>& stripped_paths,
   old_locations.resize(locations->size());
   locations->ExtractSubrange(0, locations->size(), old_locations.data());
   locations->Reserve(old_locations.size() - indices_to_delete.size());
-  for (int i = 0; i < old_locations.size(); ++i) {
+  for (size_t i = 0; i < old_locations.size(); ++i) {
     if (indices_to_delete.contains(i)) {
       delete old_locations[i];
     } else {
@@ -248,14 +248,20 @@ FileDescriptorProto StripSourceRetentionOptions(const FileDescriptor& file,
                                                 bool include_source_code_info) {
   FileDescriptorProto file_proto;
   file.CopyTo(&file_proto);
-  std::vector<std::vector<int>> stripped_paths;
-  ConvertToDynamicMessageAndStripOptions(file_proto, *file.pool(),
-                                         &stripped_paths);
   if (include_source_code_info) {
     file.CopySourceCodeInfoTo(&file_proto);
+  }
+  StripSourceRetentionOptions(*file.pool(), file_proto);
+  return file_proto;
+}
+
+void StripSourceRetentionOptions(const DescriptorPool& pool,
+                                 FileDescriptorProto& file_proto) {
+  std::vector<std::vector<int>> stripped_paths;
+  ConvertToDynamicMessageAndStripOptions(file_proto, pool, &stripped_paths);
+  if (file_proto.has_source_code_info()) {
     StripSourceCodeInfo(stripped_paths, *file_proto.mutable_source_code_info());
   }
-  return file_proto;
 }
 
 DescriptorProto StripSourceRetentionOptions(const Descriptor& message) {

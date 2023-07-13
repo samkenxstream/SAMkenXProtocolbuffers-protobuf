@@ -195,7 +195,8 @@ void SingularEnum::GenerateInlineAccessorDefinitions(io::Printer* p) const {
       return _internal_$name$();
     }
     inline void $Msg$::set_$name$($Enum$ value) {
-      $PrepareSplitMessageForWrite$ _internal_set_$name$(value);
+      $PrepareSplitMessageForWrite$;
+      _internal_set_$name$(value);
       $annotate_set$;
       // @@protoc_insertion_point(field_set:$pkg.Msg.field$)
     }
@@ -221,9 +222,11 @@ void SingularEnum::GenerateInlineAccessorDefinitions(io::Printer* p) const {
   } else {
     p->Emit(R"cc(
       inline $Enum$ $Msg$::_internal_$name$() const {
+        $TsanDetectConcurrentRead$;
         return static_cast<$Enum$>($field_$);
       }
       inline void $Msg$::_internal_set_$name$($Enum$ value) {
+        $TsanDetectConcurrentMutation$;
         $assert_valid$;
         $set_hasbit$;
         $field_$ = value;
@@ -269,9 +272,9 @@ class RepeatedEnum : public FieldGeneratorBase {
   }
 
   void GenerateSwappingCode(io::Printer* p) const override {
+    ABSL_CHECK(!ShouldSplit(descriptor_, options_));
     p->Emit(R"cc(
-      _internal_mutable_$name$()->InternalSwap(
-          other->_internal_mutable_$name$());
+      $field_$.InternalSwap(&other->$field_$);
     )cc");
   }
 

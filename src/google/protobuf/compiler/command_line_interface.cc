@@ -302,27 +302,13 @@ std::string PluginName(absl::string_view plugin_prefix,
 }
 
 
-// Get all transitive dependencies of the given file (including the file
-// itself), adding them to the given list of FileDescriptorProtos.  The
-// protos will be ordered such that every file is listed before any file that
-// depends on it, so that you can call DescriptorPool::BuildFile() on them
-// in order.  Any files in *already_seen will not be added, and each file
-// added will be inserted into *already_seen.  If include_source_code_info is
-// true then include the source code information in the FileDescriptorProtos.
-// If include_json_name is true, populate the json_name field of
-// FieldDescriptorProto for all fields.
-struct TransitiveDependencyOptions {
-  bool include_json_name = false;
-  bool include_source_code_info = false;
-  bool retain_options = false;
-};
+}  // namespace
 
-void GetTransitiveDependencies(
+void CommandLineInterface::GetTransitiveDependencies(
     const FileDescriptor* file,
     absl::flat_hash_set<const FileDescriptor*>* already_seen,
     RepeatedPtrField<FileDescriptorProto>* output,
-    const TransitiveDependencyOptions& options =
-        TransitiveDependencyOptions()) {
+    const TransitiveDependencyOptions& options) {
   if (!already_seen->insert(file).second) {
     // Already saw this file.  Skip.
     return;
@@ -336,21 +322,18 @@ void GetTransitiveDependencies(
 
   // Add this file.
   FileDescriptorProto* new_descriptor = output->Add();
-  if (options.retain_options) {
-    file->CopyTo(new_descriptor);
-    if (options.include_source_code_info) {
-      file->CopySourceCodeInfoTo(new_descriptor);
-    }
-  } else {
-    *new_descriptor =
-        StripSourceRetentionOptions(*file, options.include_source_code_info);
+  *new_descriptor =
+      google::protobuf::internal::InternalFeatureHelper::GetGeneratorProto(*file);
+  if (options.include_source_code_info) {
+    file->CopySourceCodeInfoTo(new_descriptor);
+  }
+  if (!options.retain_options) {
+    StripSourceRetentionOptions(*file->pool(), *new_descriptor);
   }
   if (options.include_json_name) {
     file->CopyJsonNameTo(new_descriptor);
   }
 }
-
-}  // namespace
 
 // A MultiFileErrorCollector that prints errors to stderr.
 class CommandLineInterface::ErrorPrinter
@@ -1551,6 +1534,21 @@ bool CommandLineInterface::ParseInputFiles(
     }
     parsed_files->push_back(parsed_file);
 
+#ifdef PROTOBUF_FUTURE_EDITIONS
+    if (!experimental_editions_ && !IsEarlyEditionsFile(parsed_file->name())) {
+      if (FileDescriptorLegacy(parsed_file).syntax() ==
+          FileDescriptorLegacy::Syntax::SYNTAX_EDITIONS) {
+        std::cerr
+            << parsed_file->name()
+            << ": This file uses editions, but --experimental_editions has not "
+               "been enabled. This syntax is experimental and should be "
+               "avoided."
+            << std::endl;
+        result = false;
+        break;
+      }
+    }
+#endif  // PROTOBUF_FUTURE_EDITIONS
 
     // Enforce --disallow_services.
     if (disallow_services_ && parsed_file->service_count() > 0) {
@@ -1601,6 +1599,9 @@ void CommandLineInterface::Clear() {
   descriptor_set_out_name_.clear();
   dependency_out_name_.clear();
 
+#ifdef PROTOBUF_FUTURE_EDITIONS
+  experimental_editions_ = false;
+#endif  // PROTOBUF_FUTURE_EDITIONS
 
   mode_ = MODE_COMPILE;
   print_mode_ = PRINT_NONE;
@@ -1919,6 +1920,9 @@ bool CommandLineInterface::ParseArgument(const char* arg, std::string* name,
       *name == "--include_imports" || *name == "--include_source_info" ||
       *name == "--retain_options" || *name == "--version" ||
       *name == "--decode_raw" ||
+#ifdef PROTOBUF_FUTURE_EDITIONS
+      *name == "--experimental_editions" ||
+#endif  // PROTOBUF_FUTURE_EDITIONS
       *name == "--print_free_field_numbers" ||
       *name == "--experimental_allow_proto3_optional" ||
       *name == "--deterministic_output" || *name == "--fatal_warnings") {
@@ -2245,6 +2249,14 @@ CommandLineInterface::InterpretArgument(const std::string& name,
 #else
     ::setenv(io::Printer::kProtocCodegenTrace.data(), "yes", 0);
 #endif
+#ifdef PROTOBUF_FUTURE_EDITIONS
+  } else if (name == "--experimental_editions") {
+    // If you're reading this, you're probably wondering what
+    // --experimental_editions is for and thinking of turning it on. This is an
+    // experimental, undocumented, unsupported flag. Enable it at your own risk
+    // (or, just don't!).
+    experimental_editions_ = true;
+#endif  // PROTOBUF_FUTURE_EDITIONS
   } else {
     // Some other flag.  Look it up in the generators list.
     const GeneratorInfo* generator_info = FindGeneratorByFlag(name);
@@ -2520,6 +2532,7 @@ bool CommandLineInterface::GenerateDependencyManifestFile(
     output_filenames.push_back(descriptor_set_out_name_);
   }
 
+  // Create the depfile, even if it will be empty.
   int fd;
   do {
     fd = open(dependency_out_name_.c_str(),
@@ -2531,30 +2544,34 @@ bool CommandLineInterface::GenerateDependencyManifestFile(
     return false;
   }
 
-  io::FileOutputStream out(fd);
-  io::Printer printer(&out, '$');
+  // Only write to the depfile if there is at least one output_filename.
+  // Otherwise, the depfile will be malformed.
+  if (!output_filenames.empty()) {
+    io::FileOutputStream out(fd);
+    io::Printer printer(&out, '$');
 
-  for (int i = 0; i < output_filenames.size(); i++) {
-    printer.Print(output_filenames[i]);
-    if (i == output_filenames.size() - 1) {
-      printer.Print(":");
-    } else {
-      printer.Print(" \\\n");
+    for (size_t i = 0; i < output_filenames.size(); i++) {
+      printer.Print(output_filenames[i]);
+      if (i == output_filenames.size() - 1) {
+        printer.Print(":");
+      } else {
+        printer.Print(" \\\n");
+      }
     }
-  }
 
-  for (int i = 0; i < file_set.file_size(); i++) {
-    const FileDescriptorProto& file = file_set.file(i);
-    const std::string& virtual_file = file.name();
-    std::string disk_file;
-    if (source_tree &&
-        source_tree->VirtualFileToDiskFile(virtual_file, &disk_file)) {
-      printer.Print(" $disk_file$", "disk_file", disk_file);
-      if (i < file_set.file_size() - 1) printer.Print("\\\n");
-    } else {
-      std::cerr << "Unable to identify path for file " << virtual_file
-                << std::endl;
-      return false;
+    for (int i = 0; i < file_set.file_size(); i++) {
+      const FileDescriptorProto& file = file_set.file(i);
+      const std::string& virtual_file = file.name();
+      std::string disk_file;
+      if (source_tree &&
+          source_tree->VirtualFileToDiskFile(virtual_file, &disk_file)) {
+        printer.Print(" $disk_file$", "disk_file", disk_file);
+        if (i < file_set.file_size() - 1) printer.Print("\\\n");
+      } else {
+        std::cerr << "Unable to identify path for file " << virtual_file
+                  << std::endl;
+        return false;
+      }
     }
   }
 
@@ -2577,13 +2594,30 @@ bool CommandLineInterface::GeneratePluginOutput(
 
 
   absl::flat_hash_set<const FileDescriptor*> already_seen;
-  for (int i = 0; i < parsed_files.size(); i++) {
-    request.add_file_to_generate(parsed_files[i]->name());
-    GetTransitiveDependencies(parsed_files[i], &already_seen,
-                              request.mutable_proto_file(),
+  for (const FileDescriptor* file : parsed_files) {
+    request.add_file_to_generate(file->name());
+    GetTransitiveDependencies(file, &already_seen, request.mutable_proto_file(),
                               {/*.include_json_name =*/true,
                                /*.include_source_code_info =*/true,
                                /*.retain_options =*/true});
+  }
+
+  // Populate source_file_descriptors and remove source-retention options from
+  // proto_file.
+  ABSL_CHECK(!parsed_files.empty());
+  const DescriptorPool* pool = parsed_files[0]->pool();
+  absl::flat_hash_set<std::string> files_to_generate(input_files_.begin(),
+                                                     input_files_.end());
+  for (FileDescriptorProto& file_proto : *request.mutable_proto_file()) {
+    if (files_to_generate.contains(file_proto.name())) {
+      const FileDescriptor* file = pool->FindFileByName(file_proto.name());
+      *request.add_source_file_descriptors() = std::move(file_proto);
+      file_proto =
+          google::protobuf::internal::InternalFeatureHelper::GetGeneratorProto(*file);
+      file->CopySourceCodeInfoTo(&file_proto);
+      file->CopyJsonNameTo(&file_proto);
+      StripSourceRetentionOptions(*file->pool(), file_proto);
+    }
   }
 
   google::protobuf::compiler::Version* version =

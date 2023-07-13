@@ -43,6 +43,9 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "google/protobuf/compiler/retention.h"
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/descriptor.pb.h"
 #include "google/protobuf/port.h"
 
 // Must be included last.
@@ -124,6 +127,35 @@ class PROTOC_EXPORT CodeGenerator {
   // version of the library. When protobufs does a api breaking change, the
   // method can be removed.
   virtual bool HasGenerateAll() const { return true; }
+
+#ifdef PROTOBUF_FUTURE_EDITIONS
+
+ protected:
+  // Retrieves the resolved source features for a given descriptor.  These
+  // should be used to make any feature-based decisions during code generation.
+  template <typename DescriptorT>
+  static const FeatureSet& GetSourceFeatures(const DescriptorT& desc) {
+    return ::google::protobuf::internal::InternalFeatureHelper::GetFeatures(desc);
+  }
+
+  // Retrieves the raw source features for a given descriptor.  These should be
+  // used to validate the original .proto file and make any decisions about it
+  // during code generation.
+  template <typename DescriptorT>
+  static const FeatureSet& GetSourceRawFeatures(const DescriptorT& desc) {
+    return ::google::protobuf::internal::InternalFeatureHelper::GetRawFeatures(desc);
+  }
+
+  // Converts a FileDescriptor to a FileDescriptorProto suitable for passing off
+  // to a runtime.  Notably, this strips all source-retention options and
+  // includes both raw and resolved features.
+  static FileDescriptorProto GetRuntimeProto(const FileDescriptor& file) {
+    FileDescriptorProto proto =
+        ::google::protobuf::internal::InternalFeatureHelper::GetGeneratorProto(file);
+    StripSourceRetentionOptions(*file.pool(), proto);
+    return proto;
+  }
+#endif  // PROTOBUF_FUTURE_EDITIONS
 };
 
 // CodeGenerators generate one or more files in a given directory.  This

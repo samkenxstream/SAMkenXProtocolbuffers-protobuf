@@ -298,7 +298,10 @@ class PROTOBUF_EXPORT Struct final :
   class _Internal;
 
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<0, 1, 2, 37, 2> _table_;
+  static const ::google::protobuf::internal::TcParseTable<
+      0, 1, 2,
+      37, 2>
+      _table_;
   template <typename T> friend class ::google::protobuf::Arena::InternalHelper;
   typedef void InternalArenaConstructable_;
   typedef void DestructorSkippable_;
@@ -308,6 +311,7 @@ class PROTOBUF_EXPORT Struct final :
                       ::google::protobuf::internal::WireFormatLite::TYPE_MESSAGE>
         fields_;
     mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    PROTOBUF_TSAN_DECLARE_MEMBER;
   };
   union { Impl_ _impl_; };
   friend struct ::TableStruct_google_2fprotobuf_2fstruct_2eproto;
@@ -562,7 +566,10 @@ class PROTOBUF_EXPORT Value final :
   inline void clear_has_kind();
 
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<0, 6, 2, 42, 2> _table_;
+  static const ::google::protobuf::internal::TcParseTable<
+      0, 6, 2,
+      42, 2>
+      _table_;
   template <typename T> friend class ::google::protobuf::Arena::InternalHelper;
   typedef void InternalArenaConstructable_;
   typedef void DestructorSkippable_;
@@ -580,6 +587,7 @@ class PROTOBUF_EXPORT Value final :
     mutable ::google::protobuf::internal::CachedSize _cached_size_;
     ::uint32_t _oneof_case_[1];
 
+    PROTOBUF_TSAN_DECLARE_MEMBER;
   };
   union { Impl_ _impl_; };
   friend struct ::TableStruct_google_2fprotobuf_2fstruct_2eproto;
@@ -738,13 +746,17 @@ class PROTOBUF_EXPORT ListValue final :
   class _Internal;
 
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<0, 1, 1, 0, 2> _table_;
+  static const ::google::protobuf::internal::TcParseTable<
+      0, 1, 1,
+      0, 2>
+      _table_;
   template <typename T> friend class ::google::protobuf::Arena::InternalHelper;
   typedef void InternalArenaConstructable_;
   typedef void DestructorSkippable_;
   struct Impl_ {
     ::google::protobuf::RepeatedPtrField< ::google::protobuf::Value > values_;
     mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    PROTOBUF_TSAN_DECLARE_MEMBER;
   };
   union { Impl_ _impl_; };
   friend struct ::TableStruct_google_2fprotobuf_2fstruct_2eproto;
@@ -779,7 +791,7 @@ inline void Struct::clear_fields() {
   _impl_.fields_.Clear();
 }
 inline const ::google::protobuf::Map<std::string, ::google::protobuf::Value>& Struct::_internal_fields() const {
-  PROTOBUF_TSAN_READ(&_impl_);
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.fields_.GetMap();
 }
 inline const ::google::protobuf::Map<std::string, ::google::protobuf::Value>& Struct::fields() const {
@@ -787,7 +799,7 @@ inline const ::google::protobuf::Map<std::string, ::google::protobuf::Value>& St
   return _internal_fields();
 }
 inline ::google::protobuf::Map<std::string, ::google::protobuf::Value>* Struct::_internal_mutable_fields() {
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   return _impl_.fields_.MutableMap();
 }
 inline ::google::protobuf::Map<std::string, ::google::protobuf::Value>* Struct::mutable_fields() {
@@ -817,7 +829,7 @@ inline ::google::protobuf::NullValue Value::null_value() const {
   return _internal_null_value();
 }
 inline void Value::set_null_value(::google::protobuf::NullValue value) {
-   _internal_set_null_value(value);
+  _internal_set_null_value(value);
   // @@protoc_insertion_point(field_set:google.protobuf.Value.null_value)
 }
 inline ::google::protobuf::NullValue Value::_internal_null_value() const {
@@ -889,6 +901,7 @@ inline const std::string& Value::string_value() const {
 template <typename Arg_, typename... Args_>
 inline PROTOBUF_ALWAYS_INLINE void Value::set_string_value(Arg_&& arg,
                                                      Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (kind_case() != kStringValue) {
     clear_kind();
 
@@ -904,12 +917,14 @@ inline std::string* Value::mutable_string_value() {
   return _s;
 }
 inline const std::string& Value::_internal_string_value() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   if (kind_case() != kStringValue) {
     return ::google::protobuf::internal::GetEmptyStringAlreadyInited();
   }
   return _impl_.kind_.string_value_.Get();
 }
 inline void Value::_internal_set_string_value(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (kind_case() != kStringValue) {
     clear_kind();
 
@@ -919,6 +934,7 @@ inline void Value::_internal_set_string_value(const std::string& value) {
   _impl_.kind_.string_value_.Set(value, GetArenaForAllocation());
 }
 inline std::string* Value::_internal_mutable_string_value() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (kind_case() != kStringValue) {
     clear_kind();
 
@@ -928,6 +944,7 @@ inline std::string* Value::_internal_mutable_string_value() {
   return _impl_.kind_.string_value_.Mutable( GetArenaForAllocation());
 }
 inline std::string* Value::release_string_value() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.Value.string_value)
   if (kind_case() != kStringValue) {
     return nullptr;
@@ -936,6 +953,7 @@ inline std::string* Value::release_string_value() {
   return _impl_.kind_.string_value_.Release();
 }
 inline void Value::set_allocated_string_value(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (has_kind()) {
     clear_kind();
   }
@@ -1159,7 +1177,7 @@ inline ::google::protobuf::Value* ListValue::mutable_values(int index) {
 inline ::google::protobuf::RepeatedPtrField< ::google::protobuf::Value >*
 ListValue::mutable_values() {
   // @@protoc_insertion_point(field_mutable_list:google.protobuf.ListValue.values)
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   return _internal_mutable_values();
 }
 inline const ::google::protobuf::Value& ListValue::values(int index) const {
@@ -1167,7 +1185,7 @@ inline const ::google::protobuf::Value& ListValue::values(int index) const {
     return _internal_values().Get(index);
 }
 inline ::google::protobuf::Value* ListValue::add_values() {
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   ::google::protobuf::Value* _add = _internal_mutable_values()->Add();
   // @@protoc_insertion_point(field_add:google.protobuf.ListValue.values)
   return _add;
@@ -1179,12 +1197,12 @@ ListValue::values() const {
 }
 inline const ::google::protobuf::RepeatedPtrField<::google::protobuf::Value>&
 ListValue::_internal_values() const {
-  PROTOBUF_TSAN_READ(&_impl_);
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.values_;
 }
 inline ::google::protobuf::RepeatedPtrField<::google::protobuf::Value>*
 ListValue::_internal_mutable_values() {
-  PROTOBUF_TSAN_READ(&_impl_);
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return &_impl_.values_;
 }
 

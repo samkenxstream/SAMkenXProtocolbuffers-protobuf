@@ -8,8 +8,8 @@ PROTOBUF_MAVEN_ARTIFACTS = [
     "com.google.code.gson:gson:2.8.9",
     "com.google.errorprone:error_prone_annotations:2.5.1",
     "com.google.j2objc:j2objc-annotations:2.8",
-    "com.google.guava:guava:32.0.0-jre",
-    "com.google.guava:guava-testlib:32.0.0-jre",
+    "com.google.guava:guava:32.0.1-jre",
+    "com.google.guava:guava-testlib:32.0.1-jre",
     "com.google.truth:truth:1.1.2",
     "junit:junit:4.13.2",
     "org.mockito:mockito-core:4.3.1",
@@ -84,11 +84,10 @@ def protobuf_deps():
         )
 
     if not native.existing_rule("rules_java"):
-        _github_archive(
+        http_archive(
             name = "rules_java",
-            repo = "https://github.com/bazelbuild/rules_java",
-            commit = "981f06c3d2bd10225e85209904090eb7b5fb26bd",
-            sha256 = "7979ece89e82546b0dcd1dff7538c34b5a6ebc9148971106f0e3705444f00665",
+            url = "https://github.com/bazelbuild/rules_java/releases/download/6.0.0/rules_java-6.0.0.tar.gz",
+            sha256 = "469b7f3b580b4fcf8112f4d6d0d5a4ce8e1ad5e21fee67d8e8335d5f8b3debab",
         )
 
     if not native.existing_rule("rules_proto"):
@@ -151,7 +150,7 @@ def protobuf_deps():
         _github_archive(
             name = "upb",
             repo = "https://github.com/protocolbuffers/upb",
-            commit = "56a770818cf47f8ac9e2ac1585a8d2b764214479",
-            sha256 = "",
+            commit = "01fed1cc1ba255bf22b49393ba054b8d270e6ba3",
+            sha256 = "387bef0d61094773a4ce7dd1c3d92bb99444155531e00945161ec9cd36e5bfce",
             patches = ["@com_google_protobuf//build_defs:upb.patch"],
         )

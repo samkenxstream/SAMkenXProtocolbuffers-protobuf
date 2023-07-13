@@ -131,6 +131,7 @@
 #include "google/protobuf/map.h"  // TODO(b/211442718): cleanup
 #include "google/protobuf/message_lite.h"
 #include "google/protobuf/port.h"
+#include "google/protobuf/reflection.h"
 
 // Must be included last.
 #include "google/protobuf/port_def.inc"
@@ -161,6 +162,7 @@ namespace internal {
 struct FuzzPeer;
 struct DescriptorTable;
 class MapFieldBase;
+class MessageUtil;
 class SwapFieldHelper;
 class CachedSize;
 struct TailCallTableInfo;
@@ -436,14 +438,6 @@ void* CreateSplitMessageGeneric(Arena* arena, const void* default_split,
 // These are protobuf internals that users shouldn't care about.
 class RepeatedFieldAccessor;
 }  // namespace internal
-
-// Forward-declare RepeatedFieldRef templates. The second type parameter is
-// used for SFINAE tricks. Users should ignore it.
-template <typename T, typename Enable = void>
-class RepeatedFieldRef;
-
-template <typename T, typename Enable = void>
-class MutableRepeatedFieldRef;
 
 // This interface contains methods that can be used to dynamically access
 // and modify the fields of a protocol message.  Their semantics are
@@ -1030,8 +1024,11 @@ class PROTOBUF_EXPORT Reflection final {
   // "message_type" should be set to its descriptor. Otherwise "message_type"
   // should be set to nullptr. Implementations of this method should check
   // whether "cpp_type"/"message_type" is consistent with the actual type of the
-  // field. We use 1 routine rather than 2 (const vs mutable) because it is
-  // protected and it doesn't change the message.
+  // field.
+  const void* RepeatedFieldData(const Message& message,
+                                const FieldDescriptor* field,
+                                FieldDescriptor::CppType cpp_type,
+                                const Descriptor* message_type) const;
   void* RepeatedFieldData(Message* message, const FieldDescriptor* field,
                           FieldDescriptor::CppType cpp_type,
                           const Descriptor* message_type) const;
@@ -1119,6 +1116,7 @@ class PROTOBUF_EXPORT Reflection final {
   friend class expr::CelMapReflectionFriend;
   friend class internal::MapFieldReflectionTest;
   friend class internal::MapKeySorter;
+  friend class internal::MessageUtil;
   friend class internal::WireFormat;
   friend class internal::ReflectionOps;
   friend class internal::SwapFieldHelper;
@@ -1134,8 +1132,9 @@ class PROTOBUF_EXPORT Reflection final {
   // call MutableRawRepeatedField directly here because we don't have access to
   // FieldOptions::* which are defined in descriptor.pb.h.  Including that
   // file here is not possible because it would cause a circular include cycle.
-  // We use 1 routine rather than 2 (const vs mutable) because it is private
-  // and mutable a repeated string field doesn't change the message.
+  const void* GetRawRepeatedString(const Message& message,
+                                   const FieldDescriptor* field,
+                                   bool is_string) const;
   void* MutableRawRepeatedString(Message* message, const FieldDescriptor* field,
                                  bool is_string) const;
 
@@ -1491,8 +1490,8 @@ template <>
 inline const RepeatedPtrField<std::string>&
 Reflection::GetRepeatedPtrFieldInternal<std::string>(
     const Message& message, const FieldDescriptor* field) const {
-  return *static_cast<RepeatedPtrField<std::string>*>(
-      MutableRawRepeatedString(const_cast<Message*>(&message), field, true));
+  return *static_cast<const RepeatedPtrField<std::string>*>(
+      GetRawRepeatedString(message, field, true));
 }
 
 template <>
@@ -1569,6 +1568,18 @@ const Type& Reflection::GetRaw(const Message& message,
   }
   return internal::GetConstRefAtOffset<Type>(message,
                                              schema_.GetFieldOffset(field));
+}
+
+template <typename T>
+RepeatedFieldRef<T> Reflection::GetRepeatedFieldRef(
+    const Message& message, const FieldDescriptor* field) const {
+  return RepeatedFieldRef<T>(message, field);
+}
+
+template <typename T>
+MutableRepeatedFieldRef<T> Reflection::GetMutableRepeatedFieldRef(
+    Message* message, const FieldDescriptor* field) const {
+  return MutableRepeatedFieldRef<T>(message, field);
 }
 }  // namespace protobuf
 }  // namespace google

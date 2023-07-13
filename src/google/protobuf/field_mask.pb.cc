@@ -36,7 +36,7 @@ struct FieldMaskDefaultTypeInternal {
   };
 };
 
-PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT PROTOBUF_EXPORT
     PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 FieldMaskDefaultTypeInternal _FieldMask_default_instance_;
 }  // namespace protobuf
 }  // namespace google
@@ -279,8 +279,7 @@ PROTOBUF_NOINLINE bool FieldMask::IsInitialized() const {
 void FieldMask::InternalSwap(FieldMask* other) {
   using std::swap;
   _internal_metadata_.InternalSwap(&other->_internal_metadata_);
-  _internal_mutable_paths()->InternalSwap(
-      other->_internal_mutable_paths());
+  _impl_.paths_.InternalSwap(&other->_impl_.paths_);
 }
 
 ::google::protobuf::Metadata FieldMask::GetMetadata() const {

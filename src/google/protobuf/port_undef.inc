@@ -103,6 +103,7 @@
 #undef PROTOBUF_ASAN
 #undef PROTOBUF_MSAN
 #undef PROTOBUF_TSAN
+#undef PROTOBUF_TSAN_DECLARE_MEMBER
 #undef PROTOBUF_TSAN_READ
 #undef PROTOBUF_TSAN_WRITE
 #undef PROTOBUF_USE_TABLE_PARSER_ON_REFLECTION
@@ -143,6 +144,7 @@
 #endif
 
 #ifdef _WIN32
+#pragma pop_macro("CompareString")
 #pragma pop_macro("CREATE_NEW")
 #pragma pop_macro("DELETE")
 #pragma pop_macro("DOUBLE_CLICK")
@@ -181,6 +183,13 @@
 #pragma pop_macro("GID_MAX")
 #pragma pop_macro("TYPE_BOOL")
 #endif  // __APPLE__
+
+#ifdef __FreeBSD__
+#pragma pop_macro("TRUE")
+#pragma pop_macro("FALSE")
+#pragma pop_macro("UID_MAX")
+#pragma pop_macro("GID_MAX")
+#endif  // __FreeBSD__
 
 #if defined(__clang__) || defined(__GNUC__) || defined(_MSC_VER)
 #pragma pop_macro("DEBUG")

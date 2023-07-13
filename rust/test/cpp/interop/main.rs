@@ -1,5 +1,5 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2023 Google Inc.  All rights reserved.
+// Copyright 2023 Google LLC.  All rights reserved.
 // https://developers.google.com/protocol-buffers/
 //
 // Redistribution and use in source and binary forms, with or without
@@ -12,7 +12,7 @@
 // copyright notice, this list of conditions and the following disclaimer
 // in the documentation and/or other materials provided with the
 // distribution.
-//     * Neither the name of Google Inc. nor the names of its
+//     * Neither the name of Google LLC. nor the names of its
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
@@ -48,10 +48,10 @@ macro_rules! proto_assert_eq {
 extern "C" {
     fn DeserializeTestAllTypes(data: *const u8, len: usize) -> NonNull<u8>;
     fn MutateTestAllTypes(msg: NonNull<u8>);
-    fn SerializeTestAllTypes(msg: NonNull<u8>) -> protobuf_cpp::SerializedData;
+    fn SerializeTestAllTypes(msg: NonNull<u8>) -> protobuf_cpp::__runtime::SerializedData;
 
     fn NewWithExtension() -> NonNull<u8>;
-    fn GetBytesExtension(msg: NonNull<u8>) -> protobuf_cpp::PtrAndLen;
+    fn GetBytesExtension(msg: NonNull<u8>) -> protobuf_cpp::__internal::PtrAndLen;
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn deserialize_in_cpp() {
 
     let msg2 = unsafe {
         TestAllTypes::__unstable_wrap_cpp_grant_permission_to_break(DeserializeTestAllTypes(
-            data.as_ptr(),
+            (*data).as_ptr(),
             data.len(),
         ))
     };
@@ -110,8 +110,7 @@ fn smuggle_extension() {
 
     let mut msg2 = TestAllExtensions::new();
     msg2.deserialize(&data).unwrap();
-    let bytes = unsafe {
-        GetBytesExtension(msg2.__unstable_cpp_repr_grant_permission_to_break()).as_ref()
-    };
+    let bytes =
+        unsafe { GetBytesExtension(msg2.__unstable_cpp_repr_grant_permission_to_break()).as_ref() };
     assert_eq!(&*bytes, b"smuggled");
 }

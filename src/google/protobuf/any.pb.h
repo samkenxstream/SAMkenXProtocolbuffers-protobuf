@@ -274,7 +274,10 @@ class PROTOBUF_EXPORT Any final :
   class _Internal;
 
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<1, 2, 0, 36, 2> _table_;
+  static const ::google::protobuf::internal::TcParseTable<
+      1, 2, 0,
+      36, 2>
+      _table_;
   template <typename T> friend class ::google::protobuf::Arena::InternalHelper;
   typedef void InternalArenaConstructable_;
   typedef void DestructorSkippable_;
@@ -283,6 +286,7 @@ class PROTOBUF_EXPORT Any final :
     ::google::protobuf::internal::ArenaStringPtr value_;
     mutable ::google::protobuf::internal::CachedSize _cached_size_;
     ::google::protobuf::internal::AnyMetadata _any_metadata_;
+    PROTOBUF_TSAN_DECLARE_MEMBER;
   };
   union { Impl_ _impl_; };
   friend struct ::TableStruct_google_2fprotobuf_2fany_2eproto;
@@ -315,6 +319,7 @@ inline const std::string& Any::type_url() const {
 template <typename Arg_, typename... Args_>
 inline PROTOBUF_ALWAYS_INLINE void Any::set_type_url(Arg_&& arg,
                                                      Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   ;
   _impl_.type_url_.Set(static_cast<Arg_&&>(arg), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:google.protobuf.Any.type_url)
@@ -325,21 +330,26 @@ inline std::string* Any::mutable_type_url() {
   return _s;
 }
 inline const std::string& Any::_internal_type_url() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.type_url_.Get();
 }
 inline void Any::_internal_set_type_url(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   ;
   _impl_.type_url_.Set(value, GetArenaForAllocation());
 }
 inline std::string* Any::_internal_mutable_type_url() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   ;
   return _impl_.type_url_.Mutable( GetArenaForAllocation());
 }
 inline std::string* Any::release_type_url() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.Any.type_url)
   return _impl_.type_url_.Release();
 }
 inline void Any::set_allocated_type_url(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_.type_url_.SetAllocated(value, GetArenaForAllocation());
   #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
         if (_impl_.type_url_.IsDefault()) {
@@ -360,6 +370,7 @@ inline const std::string& Any::value() const {
 template <typename Arg_, typename... Args_>
 inline PROTOBUF_ALWAYS_INLINE void Any::set_value(Arg_&& arg,
                                                      Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   ;
   _impl_.value_.SetBytes(static_cast<Arg_&&>(arg), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:google.protobuf.Any.value)
@@ -370,21 +381,26 @@ inline std::string* Any::mutable_value() {
   return _s;
 }
 inline const std::string& Any::_internal_value() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.value_.Get();
 }
 inline void Any::_internal_set_value(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   ;
   _impl_.value_.Set(value, GetArenaForAllocation());
 }
 inline std::string* Any::_internal_mutable_value() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   ;
   return _impl_.value_.Mutable( GetArenaForAllocation());
 }
 inline std::string* Any::release_value() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.Any.value)
   return _impl_.value_.Release();
 }
 inline void Any::set_allocated_value(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_.value_.SetAllocated(value, GetArenaForAllocation());
   #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
         if (_impl_.value_.IsDefault()) {

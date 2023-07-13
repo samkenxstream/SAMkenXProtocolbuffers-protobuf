@@ -45,6 +45,7 @@
 #define GOOGLE_PROTOBUF_REPEATED_FIELD_H__
 
 #include <algorithm>
+#include <cstddef>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -56,10 +57,13 @@
 #include "google/protobuf/port.h"
 #include "absl/base/attributes.h"
 #include "absl/base/dynamic_annotations.h"
+#include "absl/base/optimization.h"
 #include "absl/log/absl_check.h"
+#include "absl/log/absl_log.h"
 #include "absl/meta/type_traits.h"
 #include "absl/strings/cord.h"
 #include "google/protobuf/generated_enum_util.h"
+#include "google/protobuf/internal_visibility.h"
 #include "google/protobuf/message_lite.h"
 #include "google/protobuf/port.h"
 #include "google/protobuf/repeated_ptr_field.h"
@@ -183,9 +187,10 @@ class RepeatedField final
 
  public:
   constexpr RepeatedField();
-  explicit RepeatedField(Arena* arena);
+  RepeatedField(const RepeatedField& rhs) : RepeatedField(nullptr, rhs) {}
 
-  RepeatedField(const RepeatedField& rhs);
+  // TODO(b/290091828): make this constructor private
+  explicit RepeatedField(Arena* arena);
 
   template <typename Iter,
             typename = typename std::enable_if<std::is_constructible<
@@ -193,6 +198,13 @@ class RepeatedField final
   RepeatedField(Iter begin, Iter end);
 
   ~RepeatedField();
+
+  // Arena enabled constructors: for internal use only.
+  RepeatedField(internal::InternalVisibility, Arena* arena)
+      : RepeatedField(arena) {}
+  RepeatedField(internal::InternalVisibility, Arena* arena,
+                const RepeatedField& rhs)
+      : RepeatedField(arena, rhs) {}
 
   RepeatedField& operator=(const RepeatedField& other)
       ABSL_ATTRIBUTE_LIFETIME_BOUND;
@@ -346,7 +358,10 @@ class RepeatedField final
   // This is public due to it being called by generated code.
   inline void InternalSwap(RepeatedField* other);
 
+  void MergeFromArray(const Element* array, size_t length);
+
  private:
+  RepeatedField(Arena* arena, const RepeatedField& rhs);
   template <typename T> friend class Arena::InternalHelper;
 
   // Gets the Arena on which this RepeatedField stores its elements.
@@ -444,6 +459,9 @@ class RepeatedField final
       Element unused;
     };
     Element* elements() { return reinterpret_cast<Element*>(this + 1); }
+
+    // Avoid 'implicitly deleted dtor' warnings on certain compilers.
+    ~Rep() = delete;
   };
   static PROTOBUF_CONSTEXPR const size_t kRepHeaderSize = sizeof(Rep);
 
@@ -514,8 +532,9 @@ inline RepeatedField<Element>::RepeatedField(Arena* arena)
 }
 
 template <typename Element>
-inline RepeatedField<Element>::RepeatedField(const RepeatedField& rhs)
-    : current_size_(0), total_size_(0), arena_or_elements_(nullptr) {
+inline RepeatedField<Element>::RepeatedField(Arena* arena,
+                                             const RepeatedField& rhs)
+    : current_size_(0), total_size_(0), arena_or_elements_(arena) {
   StaticValidityCheck();
   if (auto size = rhs.current_size_) {
     Grow(0, size);
@@ -603,6 +622,30 @@ inline int RepeatedField<Element>::size() const {
 template <typename Element>
 inline int RepeatedField<Element>::Capacity() const {
   return total_size_;
+}
+
+template <typename Element>
+inline void RepeatedField<Element>::MergeFromArray(const Element* array,
+                                                   size_t length) {
+  // Only supports trivially copyable types.
+  static_assert(std::is_trivially_copyable<Element>::value,
+                "only trivialy copyable types are supported");
+
+  ABSL_DCHECK_GT(length, 0u);
+  if (ABSL_PREDICT_TRUE(current_size_ + static_cast<int>(length) >
+                        total_size_)) {
+    Grow(current_size_, current_size_ + length);
+  }
+  Element* elem = unsafe_elements();
+  ABSL_DCHECK_NE(elem, nullptr);
+  void* p = elem + ExchangeCurrentSize(current_size_ + length);
+  memcpy(p, array, sizeof(Element) * length);
+}
+
+template <>
+inline void RepeatedField<absl::Cord>::MergeFromArray(const absl::Cord* array,
+                                                      size_t length) {
+  ABSL_LOG(FATAL) << "not supported";
 }
 
 template <typename Element>
@@ -1024,9 +1067,11 @@ PROTOBUF_NOINLINE void RepeatedField<Element>::GrowNoAnnotate(int current_size,
   arena_or_elements_ = new_rep->elements();
 }
 
-// TODO(b/266411038): we should really be able to make this:
-// template <bool annotate_size = true>
-// void Grow();
+// Ideally we would be able to use:
+//   template <bool annotate_size = true>
+//   void Grow();
+// However, as explained in b/266411038#comment9, this causes issues
+// in shared libraries for Youtube (and possibly elsewhere).
 template <typename Element>
 PROTOBUF_NOINLINE void RepeatedField<Element>::Grow(int current_size,
                                                     int new_size) {

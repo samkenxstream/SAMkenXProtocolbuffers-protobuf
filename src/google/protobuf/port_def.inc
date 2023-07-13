@@ -224,6 +224,10 @@ static_assert(PROTOBUF_CPLUSPLUS_MIN(201402L), "Protobuf only supports C++14 and
 static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
               "Protobuf only supports Abseil version 20230125.3 and newer.");
 
+// Enable editions infrastructure by default.  This should be a no-op without
+// the --experimental_editions protoc flag.
+#define PROTOBUF_FUTURE_EDITIONS 1
+
 // Future versions of protobuf will include breaking changes to some APIs.
 // This macro can be set to enable these API changes ahead of time, so that
 // user code can be updated before upgrading versions of protobuf.
@@ -241,10 +245,6 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 // Used to remove `RepeatedPtrField::GetArena() const`.
 // Owner: ezb@
 #define PROTOBUF_FUTURE_REMOVE_CONST_REPEATEDFIELD_GETARENA_API 1
-
-// Used to remove Protobuf editions feature.
-// Owner: mkruskal@
-#define PROTOBUF_FUTURE_EDITIONS 1
 
 // Used to make ExtensionRange into a fully-fledged descriptor class.
 // Owner: mkruskal@
@@ -706,7 +706,7 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 // constant-initializing weak default instance pointers. Versions 12.0 and
 // higher seem to work, except that XCode 12.5.1 shows the error even though it
 // uses Clang 12.0.5.
-# elif !defined(__CYGWIN__) && \
+# elif !defined(__CYGWIN__) && !defined(__MINGW32__) && \
     __has_cpp_attribute(clang::require_constant_initialization) && \
         ((defined(__APPLE__) && PROTOBUF_CLANG_MIN(13, 0)) ||             \
      (!defined(__APPLE__) && PROTOBUF_CLANG_MIN(12, 0)))
@@ -835,8 +835,7 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 #ifdef PROTOBUF_TSAN_WRITE
 #error PROTOBUF_TSAN_WRITE was previously defined
 #endif
-// TODO(b/280674214): re-enable these macros once failing tests are fixed.
-#if defined(PROTOBUF_TSAN) && false
+#ifdef PROTOBUF_TSAN
 // TODO(b/285620714): it would be preferable to use __tsan_external_read/
 // __tsan_external_write, but they can cause dlopen issues.
 #define PROTOBUF_TSAN_READ(addr)                                               \
@@ -854,6 +853,12 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 #define PROTOBUF_TSAN_READ(addr)
 #define PROTOBUF_TSAN_WRITE(addr)
 #endif  // PROTOBUF_TSAN
+
+#ifdef PROTOBUF_TSAN
+#define PROTOBUF_TSAN_DECLARE_MEMBER ::uint32_t _tsan_detect_race = 0
+#else
+#define PROTOBUF_TSAN_DECLARE_MEMBER
+#endif
 
 #ifdef PROTOBUF_USE_TABLE_PARSER_ON_REFLECTION
 #error PROTOBUF_USE_TABLE_PARSER_ON_REFLECTION was previously defined
@@ -937,6 +942,8 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 // Windows declares several inconvenient macro names.  We #undef them and then
 // restore them in port_undef.inc.
 #ifdef _WIN32
+#pragma push_macro("CompareString")
+#undef CompareString
 #pragma push_macro("CREATE_NEW")
 #undef CREATE_NEW
 #pragma push_macro("DELETE")
@@ -1013,6 +1020,19 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 #undef TYPE_BOOL
 #endif  // __APPLE__
 
+#ifdef __FreeBSD__
+// Inconvenient macro names from /usr/include/sys/param.h.
+#pragma push_macro("TRUE")
+#undef TRUE
+#pragma push_macro("FALSE")
+#undef FALSE
+// Inconvenient macro names from /usr/include/sys/limits.h.
+#pragma push_macro("UID_MAX")
+#undef UID_MAX
+#pragma push_macro("GID_MAX")
+#undef GID_MAX
+#endif  // __FreeBSD__
+
 #if defined(__clang__) || defined(__GNUC__) || defined(_MSC_VER)
 // Don't let Objective-C Macros interfere with proto identifiers with the same
 // name.
@@ -1035,6 +1055,10 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 // This error has been generally flaky, but we need to disable it specifically
 // to fix https://github.com/protocolbuffers/protobuf/issues/12313
 #pragma clang diagnostic ignored "-Wunused-parameter"
+// -Wshadow means that declaration shadows a variable.
+// for (int i = 0; i < file_->public_dependency_count(); ++i)
+//   for (int i = 0; i < public_dep->message_type_count(); ++i)
+#pragma clang diagnostic ignored "-Wshadow"
 #endif
 #ifdef __GNUC__
 #pragma GCC diagnostic push
@@ -1058,6 +1082,10 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 // This error has been generally flaky, but we need to disable it specifically
 // to fix https://github.com/protocolbuffers/protobuf/issues/12313
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+// -Wshadow means that declaration shadows a variable.
+// for (int i = 0; i < file_->public_dependency_count(); ++i)
+//   for (int i = 0; i < public_dep->message_type_count(); ++i)
+#pragma GCC diagnostic ignored "-Wshadow"
 #ifndef __clang__
 // This causes spurious warnings in GCC 13.
 #pragma GCC diagnostic ignored "-Wstringop-overflow"

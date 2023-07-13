@@ -313,7 +313,10 @@ class PROTOC_EXPORT Version final :
   class _Internal;
 
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<2, 4, 0, 47, 2> _table_;
+  static const ::google::protobuf::internal::TcParseTable<
+      2, 4, 0,
+      47, 2>
+      _table_;
   template <typename T> friend class ::google::protobuf::Arena::InternalHelper;
   typedef void InternalArenaConstructable_;
   typedef void DestructorSkippable_;
@@ -324,6 +327,7 @@ class PROTOC_EXPORT Version final :
     ::int32_t major_;
     ::int32_t minor_;
     ::int32_t patch_;
+    PROTOBUF_TSAN_DECLARE_MEMBER;
   };
   union { Impl_ _impl_; };
   friend struct ::TableStruct_google_2fprotobuf_2fcompiler_2fplugin_2eproto;
@@ -459,6 +463,7 @@ class PROTOC_EXPORT CodeGeneratorRequest final :
   enum : int {
     kFileToGenerateFieldNumber = 1,
     kProtoFileFieldNumber = 15,
+    kSourceFileDescriptorsFieldNumber = 17,
     kParameterFieldNumber = 2,
     kCompilerVersionFieldNumber = 3,
   };
@@ -508,6 +513,24 @@ class PROTOC_EXPORT CodeGeneratorRequest final :
   ::google::protobuf::FileDescriptorProto* add_proto_file();
   const ::google::protobuf::RepeatedPtrField< ::google::protobuf::FileDescriptorProto >&
       proto_file() const;
+  // repeated .google.protobuf.FileDescriptorProto source_file_descriptors = 17;
+  int source_file_descriptors_size() const;
+  private:
+  int _internal_source_file_descriptors_size() const;
+
+  public:
+  void clear_source_file_descriptors() ;
+  ::google::protobuf::FileDescriptorProto* mutable_source_file_descriptors(int index);
+  ::google::protobuf::RepeatedPtrField< ::google::protobuf::FileDescriptorProto >*
+      mutable_source_file_descriptors();
+  private:
+  const ::google::protobuf::RepeatedPtrField<::google::protobuf::FileDescriptorProto>& _internal_source_file_descriptors() const;
+  ::google::protobuf::RepeatedPtrField<::google::protobuf::FileDescriptorProto>* _internal_mutable_source_file_descriptors();
+  public:
+  const ::google::protobuf::FileDescriptorProto& source_file_descriptors(int index) const;
+  ::google::protobuf::FileDescriptorProto* add_source_file_descriptors();
+  const ::google::protobuf::RepeatedPtrField< ::google::protobuf::FileDescriptorProto >&
+      source_file_descriptors() const;
   // optional string parameter = 2;
   bool has_parameter() const;
   void clear_parameter() ;
@@ -545,7 +568,10 @@ class PROTOC_EXPORT CodeGeneratorRequest final :
   class _Internal;
 
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<3, 4, 2, 79, 2> _table_;
+  static const ::google::protobuf::internal::TcParseTable<
+      3, 5, 3,
+      79, 2>
+      _table_;
   template <typename T> friend class ::google::protobuf::Arena::InternalHelper;
   typedef void InternalArenaConstructable_;
   typedef void DestructorSkippable_;
@@ -554,8 +580,10 @@ class PROTOC_EXPORT CodeGeneratorRequest final :
     mutable ::google::protobuf::internal::CachedSize _cached_size_;
     ::google::protobuf::RepeatedPtrField<std::string> file_to_generate_;
     ::google::protobuf::RepeatedPtrField< ::google::protobuf::FileDescriptorProto > proto_file_;
+    ::google::protobuf::RepeatedPtrField< ::google::protobuf::FileDescriptorProto > source_file_descriptors_;
     ::google::protobuf::internal::ArenaStringPtr parameter_;
     ::google::protobuf::compiler::Version* compiler_version_;
+    PROTOBUF_TSAN_DECLARE_MEMBER;
   };
   union { Impl_ _impl_; };
   friend struct ::TableStruct_google_2fprotobuf_2fcompiler_2fplugin_2eproto;
@@ -765,7 +793,10 @@ class PROTOC_EXPORT CodeGeneratorResponse_File final :
   class _Internal;
 
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<2, 4, 1, 86, 2> _table_;
+  static const ::google::protobuf::internal::TcParseTable<
+      2, 4, 1,
+      86, 2>
+      _table_;
   template <typename T> friend class ::google::protobuf::Arena::InternalHelper;
   typedef void InternalArenaConstructable_;
   typedef void DestructorSkippable_;
@@ -776,6 +807,7 @@ class PROTOC_EXPORT CodeGeneratorResponse_File final :
     ::google::protobuf::internal::ArenaStringPtr insertion_point_;
     ::google::protobuf::internal::ArenaStringPtr content_;
     ::google::protobuf::GeneratedCodeInfo* generated_code_info_;
+    PROTOBUF_TSAN_DECLARE_MEMBER;
   };
   union { Impl_ _impl_; };
   friend struct ::TableStruct_google_2fprotobuf_2fcompiler_2fplugin_2eproto;
@@ -986,7 +1018,10 @@ class PROTOC_EXPORT CodeGeneratorResponse final :
   class _Internal;
 
   friend class ::google::protobuf::internal::TcParser;
-  static const ::google::protobuf::internal::TcParseTable<2, 3, 1, 60, 2> _table_;
+  static const ::google::protobuf::internal::TcParseTable<
+      2, 3, 1,
+      60, 2>
+      _table_;
   template <typename T> friend class ::google::protobuf::Arena::InternalHelper;
   typedef void InternalArenaConstructable_;
   typedef void DestructorSkippable_;
@@ -996,6 +1031,7 @@ class PROTOC_EXPORT CodeGeneratorResponse final :
     ::google::protobuf::RepeatedPtrField< ::google::protobuf::compiler::CodeGeneratorResponse_File > file_;
     ::google::protobuf::internal::ArenaStringPtr error_;
     ::uint64_t supported_features_;
+    PROTOBUF_TSAN_DECLARE_MEMBER;
   };
   union { Impl_ _impl_; };
   friend struct ::TableStruct_google_2fprotobuf_2fcompiler_2fplugin_2eproto;
@@ -1035,9 +1071,11 @@ inline void Version::set_major(::int32_t value) {
   // @@protoc_insertion_point(field_set:google.protobuf.compiler.Version.major)
 }
 inline ::int32_t Version::_internal_major() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.major_;
 }
 inline void Version::_internal_set_major(::int32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000002u;
   _impl_.major_ = value;
 }
@@ -1060,9 +1098,11 @@ inline void Version::set_minor(::int32_t value) {
   // @@protoc_insertion_point(field_set:google.protobuf.compiler.Version.minor)
 }
 inline ::int32_t Version::_internal_minor() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.minor_;
 }
 inline void Version::_internal_set_minor(::int32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000004u;
   _impl_.minor_ = value;
 }
@@ -1085,9 +1125,11 @@ inline void Version::set_patch(::int32_t value) {
   // @@protoc_insertion_point(field_set:google.protobuf.compiler.Version.patch)
 }
 inline ::int32_t Version::_internal_patch() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.patch_;
 }
 inline void Version::_internal_set_patch(::int32_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000008u;
   _impl_.patch_ = value;
 }
@@ -1108,6 +1150,7 @@ inline const std::string& Version::suffix() const {
 template <typename Arg_, typename... Args_>
 inline PROTOBUF_ALWAYS_INLINE void Version::set_suffix(Arg_&& arg,
                                                      Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   _impl_.suffix_.Set(static_cast<Arg_&&>(arg), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:google.protobuf.compiler.Version.suffix)
@@ -1118,17 +1161,21 @@ inline std::string* Version::mutable_suffix() {
   return _s;
 }
 inline const std::string& Version::_internal_suffix() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.suffix_.Get();
 }
 inline void Version::_internal_set_suffix(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   _impl_.suffix_.Set(value, GetArenaForAllocation());
 }
 inline std::string* Version::_internal_mutable_suffix() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   return _impl_.suffix_.Mutable( GetArenaForAllocation());
 }
 inline std::string* Version::release_suffix() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.compiler.Version.suffix)
   if ((_impl_._has_bits_[0] & 0x00000001u) == 0) {
     return nullptr;
@@ -1141,6 +1188,7 @@ inline std::string* Version::release_suffix() {
   return released;
 }
 inline void Version::set_allocated_suffix(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (value != nullptr) {
     _impl_._has_bits_[0] |= 0x00000001u;
   } else {
@@ -1170,7 +1218,7 @@ inline void CodeGeneratorRequest::clear_file_to_generate() {
   _internal_mutable_file_to_generate()->Clear();
 }
 inline std::string* CodeGeneratorRequest::add_file_to_generate() {
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   std::string* _s = _internal_mutable_file_to_generate()->Add();
   // @@protoc_insertion_point(field_add_mutable:google.protobuf.compiler.CodeGeneratorRequest.file_to_generate)
   return _s;
@@ -1208,29 +1256,29 @@ inline void CodeGeneratorRequest::set_file_to_generate(int index, absl::string_v
   // @@protoc_insertion_point(field_set_string_piece:google.protobuf.compiler.CodeGeneratorRequest.file_to_generate)
 }
 inline void CodeGeneratorRequest::add_file_to_generate(const std::string& value) {
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _internal_mutable_file_to_generate()->Add()->assign(value);
   // @@protoc_insertion_point(field_add:google.protobuf.compiler.CodeGeneratorRequest.file_to_generate)
 }
 inline void CodeGeneratorRequest::add_file_to_generate(std::string&& value) {
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _internal_mutable_file_to_generate()->Add(std::move(value));
   // @@protoc_insertion_point(field_add:google.protobuf.compiler.CodeGeneratorRequest.file_to_generate)
 }
 inline void CodeGeneratorRequest::add_file_to_generate(const char* value) {
   ABSL_DCHECK(value != nullptr);
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _internal_mutable_file_to_generate()->Add()->assign(value);
   // @@protoc_insertion_point(field_add_char:google.protobuf.compiler.CodeGeneratorRequest.file_to_generate)
 }
 inline void CodeGeneratorRequest::add_file_to_generate(const char* value, std::size_t size) {
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _internal_mutable_file_to_generate()->Add()->assign(
       reinterpret_cast<const char*>(value), size);
   // @@protoc_insertion_point(field_add_pointer:google.protobuf.compiler.CodeGeneratorRequest.file_to_generate)
 }
 inline void CodeGeneratorRequest::add_file_to_generate(absl::string_view value) {
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _internal_mutable_file_to_generate()->Add()->assign(value.data(), value.size());
   // @@protoc_insertion_point(field_add_string_piece:google.protobuf.compiler.CodeGeneratorRequest.file_to_generate)
 }
@@ -1241,17 +1289,17 @@ CodeGeneratorRequest::file_to_generate() const {
 }
 inline ::google::protobuf::RepeatedPtrField<std::string>* CodeGeneratorRequest::mutable_file_to_generate() {
   // @@protoc_insertion_point(field_mutable_list:google.protobuf.compiler.CodeGeneratorRequest.file_to_generate)
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   return _internal_mutable_file_to_generate();
 }
 inline const ::google::protobuf::RepeatedPtrField<std::string>&
 CodeGeneratorRequest::_internal_file_to_generate() const {
-  PROTOBUF_TSAN_READ(&_impl_);
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.file_to_generate_;
 }
 inline ::google::protobuf::RepeatedPtrField<std::string>*
 CodeGeneratorRequest::_internal_mutable_file_to_generate() {
-  PROTOBUF_TSAN_READ(&_impl_);
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return &_impl_.file_to_generate_;
 }
 
@@ -1271,6 +1319,7 @@ inline const std::string& CodeGeneratorRequest::parameter() const {
 template <typename Arg_, typename... Args_>
 inline PROTOBUF_ALWAYS_INLINE void CodeGeneratorRequest::set_parameter(Arg_&& arg,
                                                      Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   _impl_.parameter_.Set(static_cast<Arg_&&>(arg), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:google.protobuf.compiler.CodeGeneratorRequest.parameter)
@@ -1281,17 +1330,21 @@ inline std::string* CodeGeneratorRequest::mutable_parameter() {
   return _s;
 }
 inline const std::string& CodeGeneratorRequest::_internal_parameter() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.parameter_.Get();
 }
 inline void CodeGeneratorRequest::_internal_set_parameter(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   _impl_.parameter_.Set(value, GetArenaForAllocation());
 }
 inline std::string* CodeGeneratorRequest::_internal_mutable_parameter() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   return _impl_.parameter_.Mutable( GetArenaForAllocation());
 }
 inline std::string* CodeGeneratorRequest::release_parameter() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.compiler.CodeGeneratorRequest.parameter)
   if ((_impl_._has_bits_[0] & 0x00000001u) == 0) {
     return nullptr;
@@ -1304,6 +1357,7 @@ inline std::string* CodeGeneratorRequest::release_parameter() {
   return released;
 }
 inline void CodeGeneratorRequest::set_allocated_parameter(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (value != nullptr) {
     _impl_._has_bits_[0] |= 0x00000001u;
   } else {
@@ -1332,7 +1386,7 @@ inline ::google::protobuf::FileDescriptorProto* CodeGeneratorRequest::mutable_pr
 inline ::google::protobuf::RepeatedPtrField< ::google::protobuf::FileDescriptorProto >*
 CodeGeneratorRequest::mutable_proto_file() {
   // @@protoc_insertion_point(field_mutable_list:google.protobuf.compiler.CodeGeneratorRequest.proto_file)
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   return _internal_mutable_proto_file();
 }
 inline const ::google::protobuf::FileDescriptorProto& CodeGeneratorRequest::proto_file(int index) const {
@@ -1340,7 +1394,7 @@ inline const ::google::protobuf::FileDescriptorProto& CodeGeneratorRequest::prot
     return _internal_proto_file().Get(index);
 }
 inline ::google::protobuf::FileDescriptorProto* CodeGeneratorRequest::add_proto_file() {
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   ::google::protobuf::FileDescriptorProto* _add = _internal_mutable_proto_file()->Add();
   // @@protoc_insertion_point(field_add:google.protobuf.compiler.CodeGeneratorRequest.proto_file)
   return _add;
@@ -1352,13 +1406,56 @@ CodeGeneratorRequest::proto_file() const {
 }
 inline const ::google::protobuf::RepeatedPtrField<::google::protobuf::FileDescriptorProto>&
 CodeGeneratorRequest::_internal_proto_file() const {
-  PROTOBUF_TSAN_READ(&_impl_);
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.proto_file_;
 }
 inline ::google::protobuf::RepeatedPtrField<::google::protobuf::FileDescriptorProto>*
 CodeGeneratorRequest::_internal_mutable_proto_file() {
-  PROTOBUF_TSAN_READ(&_impl_);
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return &_impl_.proto_file_;
+}
+
+// repeated .google.protobuf.FileDescriptorProto source_file_descriptors = 17;
+inline int CodeGeneratorRequest::_internal_source_file_descriptors_size() const {
+  return _internal_source_file_descriptors().size();
+}
+inline int CodeGeneratorRequest::source_file_descriptors_size() const {
+  return _internal_source_file_descriptors_size();
+}
+inline ::google::protobuf::FileDescriptorProto* CodeGeneratorRequest::mutable_source_file_descriptors(int index) {
+  // @@protoc_insertion_point(field_mutable:google.protobuf.compiler.CodeGeneratorRequest.source_file_descriptors)
+  return _internal_mutable_source_file_descriptors()->Mutable(index);
+}
+inline ::google::protobuf::RepeatedPtrField< ::google::protobuf::FileDescriptorProto >*
+CodeGeneratorRequest::mutable_source_file_descriptors() {
+  // @@protoc_insertion_point(field_mutable_list:google.protobuf.compiler.CodeGeneratorRequest.source_file_descriptors)
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  return _internal_mutable_source_file_descriptors();
+}
+inline const ::google::protobuf::FileDescriptorProto& CodeGeneratorRequest::source_file_descriptors(int index) const {
+  // @@protoc_insertion_point(field_get:google.protobuf.compiler.CodeGeneratorRequest.source_file_descriptors)
+    return _internal_source_file_descriptors().Get(index);
+}
+inline ::google::protobuf::FileDescriptorProto* CodeGeneratorRequest::add_source_file_descriptors() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
+  ::google::protobuf::FileDescriptorProto* _add = _internal_mutable_source_file_descriptors()->Add();
+  // @@protoc_insertion_point(field_add:google.protobuf.compiler.CodeGeneratorRequest.source_file_descriptors)
+  return _add;
+}
+inline const ::google::protobuf::RepeatedPtrField< ::google::protobuf::FileDescriptorProto >&
+CodeGeneratorRequest::source_file_descriptors() const {
+  // @@protoc_insertion_point(field_list:google.protobuf.compiler.CodeGeneratorRequest.source_file_descriptors)
+  return _internal_source_file_descriptors();
+}
+inline const ::google::protobuf::RepeatedPtrField<::google::protobuf::FileDescriptorProto>&
+CodeGeneratorRequest::_internal_source_file_descriptors() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return _impl_.source_file_descriptors_;
+}
+inline ::google::protobuf::RepeatedPtrField<::google::protobuf::FileDescriptorProto>*
+CodeGeneratorRequest::_internal_mutable_source_file_descriptors() {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
+  return &_impl_.source_file_descriptors_;
 }
 
 // optional .google.protobuf.compiler.Version compiler_version = 3;
@@ -1372,6 +1469,7 @@ inline void CodeGeneratorRequest::clear_compiler_version() {
   _impl_._has_bits_[0] &= ~0x00000002u;
 }
 inline const ::google::protobuf::compiler::Version& CodeGeneratorRequest::_internal_compiler_version() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   const ::google::protobuf::compiler::Version* p = _impl_.compiler_version_;
   return p != nullptr ? *p : reinterpret_cast<const ::google::protobuf::compiler::Version&>(::google::protobuf::compiler::_Version_default_instance_);
 }
@@ -1380,6 +1478,7 @@ inline const ::google::protobuf::compiler::Version& CodeGeneratorRequest::compil
   return _internal_compiler_version();
 }
 inline void CodeGeneratorRequest::unsafe_arena_set_allocated_compiler_version(::google::protobuf::compiler::Version* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (GetArenaForAllocation() == nullptr) {
     delete reinterpret_cast<::google::protobuf::MessageLite*>(_impl_.compiler_version_);
   }
@@ -1392,6 +1491,7 @@ inline void CodeGeneratorRequest::unsafe_arena_set_allocated_compiler_version(::
   // @@protoc_insertion_point(field_unsafe_arena_set_allocated:google.protobuf.compiler.CodeGeneratorRequest.compiler_version)
 }
 inline ::google::protobuf::compiler::Version* CodeGeneratorRequest::release_compiler_version() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
 
   _impl_._has_bits_[0] &= ~0x00000002u;
   ::google::protobuf::compiler::Version* released = _impl_.compiler_version_;
@@ -1410,6 +1510,7 @@ inline ::google::protobuf::compiler::Version* CodeGeneratorRequest::release_comp
   return released;
 }
 inline ::google::protobuf::compiler::Version* CodeGeneratorRequest::unsafe_arena_release_compiler_version() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.compiler.CodeGeneratorRequest.compiler_version)
 
   _impl_._has_bits_[0] &= ~0x00000002u;
@@ -1418,6 +1519,7 @@ inline ::google::protobuf::compiler::Version* CodeGeneratorRequest::unsafe_arena
   return temp;
 }
 inline ::google::protobuf::compiler::Version* CodeGeneratorRequest::_internal_mutable_compiler_version() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000002u;
   if (_impl_.compiler_version_ == nullptr) {
     auto* p = CreateMaybeMessage<::google::protobuf::compiler::Version>(GetArenaForAllocation());
@@ -1432,6 +1534,7 @@ inline ::google::protobuf::compiler::Version* CodeGeneratorRequest::mutable_comp
 }
 inline void CodeGeneratorRequest::set_allocated_compiler_version(::google::protobuf::compiler::Version* value) {
   ::google::protobuf::Arena* message_arena = GetArenaForAllocation();
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (message_arena == nullptr) {
     delete reinterpret_cast<::google::protobuf::compiler::Version*>(_impl_.compiler_version_);
   }
@@ -1471,6 +1574,7 @@ inline const std::string& CodeGeneratorResponse_File::name() const {
 template <typename Arg_, typename... Args_>
 inline PROTOBUF_ALWAYS_INLINE void CodeGeneratorResponse_File::set_name(Arg_&& arg,
                                                      Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   _impl_.name_.Set(static_cast<Arg_&&>(arg), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:google.protobuf.compiler.CodeGeneratorResponse.File.name)
@@ -1481,17 +1585,21 @@ inline std::string* CodeGeneratorResponse_File::mutable_name() {
   return _s;
 }
 inline const std::string& CodeGeneratorResponse_File::_internal_name() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.name_.Get();
 }
 inline void CodeGeneratorResponse_File::_internal_set_name(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   _impl_.name_.Set(value, GetArenaForAllocation());
 }
 inline std::string* CodeGeneratorResponse_File::_internal_mutable_name() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   return _impl_.name_.Mutable( GetArenaForAllocation());
 }
 inline std::string* CodeGeneratorResponse_File::release_name() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.compiler.CodeGeneratorResponse.File.name)
   if ((_impl_._has_bits_[0] & 0x00000001u) == 0) {
     return nullptr;
@@ -1504,6 +1612,7 @@ inline std::string* CodeGeneratorResponse_File::release_name() {
   return released;
 }
 inline void CodeGeneratorResponse_File::set_allocated_name(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (value != nullptr) {
     _impl_._has_bits_[0] |= 0x00000001u;
   } else {
@@ -1534,6 +1643,7 @@ inline const std::string& CodeGeneratorResponse_File::insertion_point() const {
 template <typename Arg_, typename... Args_>
 inline PROTOBUF_ALWAYS_INLINE void CodeGeneratorResponse_File::set_insertion_point(Arg_&& arg,
                                                      Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000002u;
   _impl_.insertion_point_.Set(static_cast<Arg_&&>(arg), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:google.protobuf.compiler.CodeGeneratorResponse.File.insertion_point)
@@ -1544,17 +1654,21 @@ inline std::string* CodeGeneratorResponse_File::mutable_insertion_point() {
   return _s;
 }
 inline const std::string& CodeGeneratorResponse_File::_internal_insertion_point() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.insertion_point_.Get();
 }
 inline void CodeGeneratorResponse_File::_internal_set_insertion_point(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000002u;
   _impl_.insertion_point_.Set(value, GetArenaForAllocation());
 }
 inline std::string* CodeGeneratorResponse_File::_internal_mutable_insertion_point() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000002u;
   return _impl_.insertion_point_.Mutable( GetArenaForAllocation());
 }
 inline std::string* CodeGeneratorResponse_File::release_insertion_point() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.compiler.CodeGeneratorResponse.File.insertion_point)
   if ((_impl_._has_bits_[0] & 0x00000002u) == 0) {
     return nullptr;
@@ -1567,6 +1681,7 @@ inline std::string* CodeGeneratorResponse_File::release_insertion_point() {
   return released;
 }
 inline void CodeGeneratorResponse_File::set_allocated_insertion_point(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (value != nullptr) {
     _impl_._has_bits_[0] |= 0x00000002u;
   } else {
@@ -1597,6 +1712,7 @@ inline const std::string& CodeGeneratorResponse_File::content() const {
 template <typename Arg_, typename... Args_>
 inline PROTOBUF_ALWAYS_INLINE void CodeGeneratorResponse_File::set_content(Arg_&& arg,
                                                      Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000004u;
   _impl_.content_.Set(static_cast<Arg_&&>(arg), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:google.protobuf.compiler.CodeGeneratorResponse.File.content)
@@ -1607,17 +1723,21 @@ inline std::string* CodeGeneratorResponse_File::mutable_content() {
   return _s;
 }
 inline const std::string& CodeGeneratorResponse_File::_internal_content() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.content_.Get();
 }
 inline void CodeGeneratorResponse_File::_internal_set_content(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000004u;
   _impl_.content_.Set(value, GetArenaForAllocation());
 }
 inline std::string* CodeGeneratorResponse_File::_internal_mutable_content() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000004u;
   return _impl_.content_.Mutable( GetArenaForAllocation());
 }
 inline std::string* CodeGeneratorResponse_File::release_content() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.compiler.CodeGeneratorResponse.File.content)
   if ((_impl_._has_bits_[0] & 0x00000004u) == 0) {
     return nullptr;
@@ -1630,6 +1750,7 @@ inline std::string* CodeGeneratorResponse_File::release_content() {
   return released;
 }
 inline void CodeGeneratorResponse_File::set_allocated_content(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (value != nullptr) {
     _impl_._has_bits_[0] |= 0x00000004u;
   } else {
@@ -1651,6 +1772,7 @@ inline bool CodeGeneratorResponse_File::has_generated_code_info() const {
   return value;
 }
 inline const ::google::protobuf::GeneratedCodeInfo& CodeGeneratorResponse_File::_internal_generated_code_info() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   const ::google::protobuf::GeneratedCodeInfo* p = _impl_.generated_code_info_;
   return p != nullptr ? *p : reinterpret_cast<const ::google::protobuf::GeneratedCodeInfo&>(::google::protobuf::_GeneratedCodeInfo_default_instance_);
 }
@@ -1659,6 +1781,7 @@ inline const ::google::protobuf::GeneratedCodeInfo& CodeGeneratorResponse_File::
   return _internal_generated_code_info();
 }
 inline void CodeGeneratorResponse_File::unsafe_arena_set_allocated_generated_code_info(::google::protobuf::GeneratedCodeInfo* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (GetArenaForAllocation() == nullptr) {
     delete reinterpret_cast<::google::protobuf::MessageLite*>(_impl_.generated_code_info_);
   }
@@ -1671,6 +1794,7 @@ inline void CodeGeneratorResponse_File::unsafe_arena_set_allocated_generated_cod
   // @@protoc_insertion_point(field_unsafe_arena_set_allocated:google.protobuf.compiler.CodeGeneratorResponse.File.generated_code_info)
 }
 inline ::google::protobuf::GeneratedCodeInfo* CodeGeneratorResponse_File::release_generated_code_info() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
 
   _impl_._has_bits_[0] &= ~0x00000008u;
   ::google::protobuf::GeneratedCodeInfo* released = _impl_.generated_code_info_;
@@ -1689,6 +1813,7 @@ inline ::google::protobuf::GeneratedCodeInfo* CodeGeneratorResponse_File::releas
   return released;
 }
 inline ::google::protobuf::GeneratedCodeInfo* CodeGeneratorResponse_File::unsafe_arena_release_generated_code_info() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.compiler.CodeGeneratorResponse.File.generated_code_info)
 
   _impl_._has_bits_[0] &= ~0x00000008u;
@@ -1697,6 +1822,7 @@ inline ::google::protobuf::GeneratedCodeInfo* CodeGeneratorResponse_File::unsafe
   return temp;
 }
 inline ::google::protobuf::GeneratedCodeInfo* CodeGeneratorResponse_File::_internal_mutable_generated_code_info() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000008u;
   if (_impl_.generated_code_info_ == nullptr) {
     auto* p = CreateMaybeMessage<::google::protobuf::GeneratedCodeInfo>(GetArenaForAllocation());
@@ -1711,6 +1837,7 @@ inline ::google::protobuf::GeneratedCodeInfo* CodeGeneratorResponse_File::mutabl
 }
 inline void CodeGeneratorResponse_File::set_allocated_generated_code_info(::google::protobuf::GeneratedCodeInfo* value) {
   ::google::protobuf::Arena* message_arena = GetArenaForAllocation();
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (message_arena == nullptr) {
     delete reinterpret_cast<::google::protobuf::MessageLite*>(_impl_.generated_code_info_);
   }
@@ -1750,6 +1877,7 @@ inline const std::string& CodeGeneratorResponse::error() const {
 template <typename Arg_, typename... Args_>
 inline PROTOBUF_ALWAYS_INLINE void CodeGeneratorResponse::set_error(Arg_&& arg,
                                                      Args_... args) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   _impl_.error_.Set(static_cast<Arg_&&>(arg), args..., GetArenaForAllocation());
   // @@protoc_insertion_point(field_set:google.protobuf.compiler.CodeGeneratorResponse.error)
@@ -1760,17 +1888,21 @@ inline std::string* CodeGeneratorResponse::mutable_error() {
   return _s;
 }
 inline const std::string& CodeGeneratorResponse::_internal_error() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.error_.Get();
 }
 inline void CodeGeneratorResponse::_internal_set_error(const std::string& value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   _impl_.error_.Set(value, GetArenaForAllocation());
 }
 inline std::string* CodeGeneratorResponse::_internal_mutable_error() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000001u;
   return _impl_.error_.Mutable( GetArenaForAllocation());
 }
 inline std::string* CodeGeneratorResponse::release_error() {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   // @@protoc_insertion_point(field_release:google.protobuf.compiler.CodeGeneratorResponse.error)
   if ((_impl_._has_bits_[0] & 0x00000001u) == 0) {
     return nullptr;
@@ -1783,6 +1915,7 @@ inline std::string* CodeGeneratorResponse::release_error() {
   return released;
 }
 inline void CodeGeneratorResponse::set_allocated_error(std::string* value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   if (value != nullptr) {
     _impl_._has_bits_[0] |= 0x00000001u;
   } else {
@@ -1815,9 +1948,11 @@ inline void CodeGeneratorResponse::set_supported_features(::uint64_t value) {
   // @@protoc_insertion_point(field_set:google.protobuf.compiler.CodeGeneratorResponse.supported_features)
 }
 inline ::uint64_t CodeGeneratorResponse::_internal_supported_features() const {
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.supported_features_;
 }
 inline void CodeGeneratorResponse::_internal_set_supported_features(::uint64_t value) {
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   _impl_._has_bits_[0] |= 0x00000002u;
   _impl_.supported_features_ = value;
 }
@@ -1839,7 +1974,7 @@ inline ::google::protobuf::compiler::CodeGeneratorResponse_File* CodeGeneratorRe
 inline ::google::protobuf::RepeatedPtrField< ::google::protobuf::compiler::CodeGeneratorResponse_File >*
 CodeGeneratorResponse::mutable_file() {
   // @@protoc_insertion_point(field_mutable_list:google.protobuf.compiler.CodeGeneratorResponse.file)
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   return _internal_mutable_file();
 }
 inline const ::google::protobuf::compiler::CodeGeneratorResponse_File& CodeGeneratorResponse::file(int index) const {
@@ -1847,7 +1982,7 @@ inline const ::google::protobuf::compiler::CodeGeneratorResponse_File& CodeGener
     return _internal_file().Get(index);
 }
 inline ::google::protobuf::compiler::CodeGeneratorResponse_File* CodeGeneratorResponse::add_file() {
-  PROTOBUF_TSAN_WRITE(&_impl_);
+  PROTOBUF_TSAN_WRITE(&_impl_._tsan_detect_race);
   ::google::protobuf::compiler::CodeGeneratorResponse_File* _add = _internal_mutable_file()->Add();
   // @@protoc_insertion_point(field_add:google.protobuf.compiler.CodeGeneratorResponse.file)
   return _add;
@@ -1859,12 +1994,12 @@ CodeGeneratorResponse::file() const {
 }
 inline const ::google::protobuf::RepeatedPtrField<::google::protobuf::compiler::CodeGeneratorResponse_File>&
 CodeGeneratorResponse::_internal_file() const {
-  PROTOBUF_TSAN_READ(&_impl_);
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return _impl_.file_;
 }
 inline ::google::protobuf::RepeatedPtrField<::google::protobuf::compiler::CodeGeneratorResponse_File>*
 CodeGeneratorResponse::_internal_mutable_file() {
-  PROTOBUF_TSAN_READ(&_impl_);
+  PROTOBUF_TSAN_READ(&_impl_._tsan_detect_race);
   return &_impl_.file_;
 }
 

@@ -77,6 +77,7 @@
 namespace google {
 namespace protobuf {
 
+using internal::FieldReporterLevel;
 using internal::ReflectionMode;
 using internal::ScopedReflectionMode;
 
@@ -135,6 +136,7 @@ std::string Message::DebugString() const {
   printer.SetExpandAny(true);
   printer.SetInsertSilentMarker(internal::enable_debug_text_format_marker.load(
       std::memory_order_relaxed));
+  printer.SetReportSensitiveFields(FieldReporterLevel::kDebugString);
 
   printer.PrintToString(*this, &debug_string);
 
@@ -151,6 +153,7 @@ std::string Message::ShortDebugString() const {
   printer.SetExpandAny(true);
   printer.SetInsertSilentMarker(internal::enable_debug_text_format_marker.load(
       std::memory_order_relaxed));
+  printer.SetReportSensitiveFields(FieldReporterLevel::kShortDebugString);
 
   printer.PrintToString(*this, &debug_string);
   TrimTrailingSpace(debug_string);
@@ -168,6 +171,7 @@ std::string Message::Utf8DebugString() const {
   printer.SetExpandAny(true);
   printer.SetInsertSilentMarker(internal::enable_debug_text_format_marker.load(
       std::memory_order_relaxed));
+  printer.SetReportSensitiveFields(FieldReporterLevel::kUtf8DebugString);
 
   printer.PrintToString(*this, &debug_string);
 
@@ -185,12 +189,15 @@ std::string StringifyMessage(const Message& message, Option option) {
   ScopedReflectionMode scope(ReflectionMode::kDebugString);
 
   TextFormat::Printer printer;
+  internal::FieldReporterLevel reporter = FieldReporterLevel::kAbslStringify;
   switch (option) {
     case Option::kShort:
       printer.SetSingleLineMode(true);
+      reporter = FieldReporterLevel::kShortFormat;
       break;
     case Option::kUTF8:
       printer.SetUseUtf8StringEscaping(true);
+      reporter = FieldReporterLevel::kUtf8Format;
       break;
     case Option::kNone:
       break;
@@ -199,7 +206,7 @@ std::string StringifyMessage(const Message& message, Option option) {
   printer.SetRedactDebugString(
       internal::enable_debug_text_redaction.load(std::memory_order_relaxed));
   printer.SetRandomizeDebugString(true);
-  printer.SetReportSensitiveFields(true);
+  printer.SetReportSensitiveFields(reporter);
   std::string result;
   printer.PrintToString(message, &result);
 
@@ -1794,7 +1801,7 @@ bool TextFormat::Parser::MergeUsingImpl(io::ZeroCopyInputStream* /* input */,
   return true;
 }
 
-bool TextFormat::Parser::ParseFieldValueFromString(const std::string& input,
+bool TextFormat::Parser::ParseFieldValueFromString(absl::string_view input,
                                                    const FieldDescriptor* field,
                                                    Message* output) {
   io::ArrayInputStream input_stream(input.data(), input.size());
@@ -2108,7 +2115,7 @@ TextFormat::Printer::Printer()
       insert_silent_marker_(false),
       redact_debug_string_(false),
       randomize_debug_string_(false),
-      report_sensitive_fields_(false),
+      report_sensitive_fields_(internal::FieldReporterLevel::kNoReport),
       hide_unknown_fields_(false),
       print_message_fields_in_index_order_(false),
       expand_any_(false),
@@ -2184,7 +2191,8 @@ bool TextFormat::Printer::PrintToString(const Message& message,
   output->clear();
   io::StringOutputStream output_stream(output);
 
-  return Print(message, &output_stream);
+  return Print(message, &output_stream,
+               internal::FieldReporterLevel::kMemberPrintToString);
 }
 
 bool TextFormat::Printer::PrintUnknownFieldsToString(
@@ -2198,6 +2206,12 @@ bool TextFormat::Printer::PrintUnknownFieldsToString(
 
 bool TextFormat::Printer::Print(const Message& message,
                                 io::ZeroCopyOutputStream* output) const {
+  return Print(message, output, internal::FieldReporterLevel::kPrintWithStream);
+}
+
+bool TextFormat::Printer::Print(const Message& message,
+                                io::ZeroCopyOutputStream* output,
+                                internal::FieldReporterLevel reporter) const {
   TextGenerator generator(output, insert_silent_marker_, initial_indent_level_);
 
 
@@ -2742,7 +2756,8 @@ void TextFormat::Printer::PrintFieldValue(const Message& message,
 
 /* static */ bool TextFormat::PrintToString(const Message& message,
                                             std::string* output) {
-  return Printer().PrintToString(message, output);
+  auto printer = Printer();
+  return printer.PrintToString(message, output);
 }
 
 /* static */ bool TextFormat::PrintUnknownFieldsToString(
@@ -2757,7 +2772,7 @@ void TextFormat::Printer::PrintFieldValue(const Message& message,
 }
 
 /* static */ bool TextFormat::ParseFieldValueFromString(
-    const std::string& input, const FieldDescriptor* field, Message* message) {
+    absl::string_view input, const FieldDescriptor* field, Message* message) {
   return Parser().ParseFieldValueFromString(input, field, message);
 }
 
@@ -2872,7 +2887,7 @@ void TextFormat::Printer::PrintUnknownFields(
   }
 }
 
-namespace {
+namespace internal {
 
 // Check if the field is sensitive and should be redacted.
 bool ShouldRedactField(const FieldDescriptor* field) {
@@ -2880,12 +2895,12 @@ bool ShouldRedactField(const FieldDescriptor* field) {
   return false;
 }
 
-}  // namespace
+}  // namespace internal
 
 bool TextFormat::Printer::TryRedactFieldValue(
     const Message& message, const FieldDescriptor* field,
     BaseTextGenerator* generator, bool insert_value_separator) const {
-  if (ShouldRedactField(field)) {
+  if (internal::ShouldRedactField(field)) {
     if (redact_debug_string_) {
       IncrementRedactedFieldCounter();
       if (insert_value_separator) {

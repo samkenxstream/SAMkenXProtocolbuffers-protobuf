@@ -1155,34 +1155,6 @@ TEST_F(MapImplTest, Clear) {
   EXPECT_TRUE(map_.begin() == map_.end());
 }
 
-static void CopyConstructorHelper(Arena* arena, Map<int32_t, int32_t>* m) {
-  int32_t key1 = 0;
-  int32_t key2 = 1;
-  int32_t value1 = 100;
-  int32_t value2 = 101;
-
-  absl::flat_hash_map<int32_t, int32_t> map;
-  map[key1] = value1;
-  map[key2] = value2;
-
-  m->insert(map.begin(), map.end());
-
-  Map<int32_t, int32_t> other(*m);
-
-  EXPECT_EQ(2, other.size());
-  EXPECT_EQ(value1, other.at(key1));
-  EXPECT_EQ(value2, other.at(key2));
-}
-
-TEST_F(MapImplTest, CopyConstructorWithArena) {
-  Arena a;
-  CopyConstructorHelper(&a, &map_);
-}
-
-TEST_F(MapImplTest, CopyConstructorWithoutArena) {
-  CopyConstructorHelper(nullptr, &map_);
-}
-
 TEST_F(MapImplTest, IterConstructor) {
   int32_t key1 = 0;
   int32_t key2 = 1;
@@ -3996,7 +3968,7 @@ TEST(MapSerializationTest, DeterministicSubmessage) {
   std::string golden;
   ABSL_CHECK_OK(
       File::GetContents(TestUtil::GetTestDataPath(absl::StrCat(
-                            "third_party/protobuf/testdata/", filename)),
+                            "google/protobuf/testdata/", filename)),
                         &golden, true));
   t.ParseFromString(golden);
   *(p.mutable_m()) = t;
@@ -4038,7 +4010,7 @@ TEST(TextFormatMapTest, DynamicMessage) {
 
   std::string expected_text;
   ABSL_CHECK_OK(
-      File::GetContents(TestUtil::GetTestDataPath("third_party/protobuf/"
+      File::GetContents(TestUtil::GetTestDataPath("google/protobuf/"
                                                   "testdata/map_test_data.txt"),
                         &expected_text, true));
 
@@ -4054,7 +4026,7 @@ TEST(TextFormatMapTest, Sorted) {
 
   std::string expected_text;
   ABSL_CHECK_OK(
-      File::GetContents(TestUtil::GetTestDataPath("third_party/protobuf/"
+      File::GetContents(TestUtil::GetTestDataPath("google/protobuf/"
                                                   "testdata/map_test_data.txt"),
                         &expected_text, true));
 
@@ -4075,7 +4047,7 @@ TEST(TextFormatMapTest, ParseCorruptedString) {
   std::string serialized_message;
   ABSL_CHECK_OK(File::GetContents(
       TestUtil::GetTestDataPath(
-          "third_party/protobuf/testdata/golden_message_maps"),
+          "google/protobuf/testdata/golden_message_maps"),
       &serialized_message, true));
   UNITTEST::TestMaps message;
   ABSL_CHECK(message.ParseFromString(serialized_message));

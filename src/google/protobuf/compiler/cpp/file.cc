@@ -72,6 +72,7 @@ namespace compiler {
 namespace cpp {
 namespace {
 using Sub = ::google::protobuf::io::Printer::Sub;
+using ::google::protobuf::internal::cpp::IsLazilyInitializedFile;
 
 absl::flat_hash_map<absl::string_view, std::string> FileVars(
     const FileDescriptor* file, const Options& options) {
@@ -107,7 +108,25 @@ void UnmuteWuninitialized(io::Printer* p) {
     #endif  // __llvm__
   )");
 }
+
 }  // namespace
+
+bool FileGenerator::ShouldSkipDependencyImports(
+    const FileDescriptor* dep) const {
+  // Do not import weak deps.
+  if (!options_.opensource_runtime && IsDepWeak(dep)) {
+    return true;
+  }
+
+  // Skip feature imports, which are a visible (but non-functional) deviation
+  // between editions and legacy syntax.
+  if (options_.strip_nonfunctional_codegen &&
+      dep->name() == "third_party/protobuf/cpp_features.proto") {
+    return true;
+  }
+
+  return false;
+}
 
 FileGenerator::FileGenerator(const FileDescriptor* file, const Options& options)
     : file_(file), options_(options), scc_analyzer_(options) {
@@ -481,10 +500,7 @@ void FileGenerator::GenerateSourceIncludes(io::Printer* p) {
     for (int i = 0; i < file_->dependency_count(); ++i) {
       const FileDescriptor* dep = file_->dependency(i);
 
-      if (!options_.opensource_runtime &&
-          IsDepWeak(dep)) {  // Do not import weak deps.
-        continue;
-      }
+      if (ShouldSkipDependencyImports(dep)) continue;
 
       std::string basename = StripProto(dep->name());
       if (IsBootstrapProto(options_, file_)) {
@@ -562,7 +578,7 @@ void FileGenerator::GenerateSourceDefaultInstance(int idx, io::Printer* p) {
             };
           };
 
-          PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+          PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT$ dllexport_decl$
               PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 const $type$ $name$;
         )cc");
   }
@@ -590,7 +606,7 @@ void FileGenerator::GenerateSourceDefaultInstance(int idx, io::Printer* p) {
             };
           };
 
-          PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+          PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT$ dllexport_decl$
               PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 $type$ $name$;
         )cc");
   } else {
@@ -609,7 +625,7 @@ void FileGenerator::GenerateSourceDefaultInstance(int idx, io::Printer* p) {
             };
           };
 
-          PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+          PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT$ dllexport_decl$
               PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 $type$ $name$;
         )cc");
   }
@@ -698,10 +714,10 @@ void FileGenerator::GetCrossFileReferencesForFile(const FileDescriptor* file,
   for (int i = 0; i < file->dependency_count(); ++i) {
     const FileDescriptor* dep = file->dependency(i);
 
-    if (IsDepWeak(dep)) {
-      refs->weak_reflection_files.insert(dep);
-    } else {
+    if (!ShouldSkipDependencyImports(file->dependency(i))) {
       refs->strong_reflection_files.insert(dep);
+    } else if (IsDepWeak(dep)) {
+      refs->weak_reflection_files.insert(dep);
     }
   }
 }
@@ -1137,11 +1153,11 @@ void FileGenerator::GenerateReflectionInitializationCode(io::Printer* p) {
         }
       )cc");
 
-  // For descriptor.proto we want to avoid doing any dynamic initialization,
-  // because in some situations that would otherwise pull in a lot of
-  // unnecessary code that can't be stripped by --gc-sections. Descriptor
-  // initialization will still be performed lazily when it's needed.
-  if (file_->name() != "net/proto2/proto/descriptor.proto") {
+  // For descriptor.proto and cpp_features.proto we want to avoid doing any
+  // dynamic initialization, because in some situations that would otherwise
+  // pull in a lot of unnecessary code that can't be stripped by --gc-sections.
+  // Descriptor initialization will still be performed lazily when it's needed.
+  if (!IsLazilyInitializedFile(file_->name())) {
     p->Emit({{"dummy", UniqueName("dynamic_init_dummy", file_, options_)}},
             R"cc(
               // Force running AddDescriptors() at dynamic initialization time.
@@ -1455,8 +1471,7 @@ void FileGenerator::GenerateDependencyIncludes(io::Printer* p) {
   for (int i = 0; i < file_->dependency_count(); ++i) {
     const FileDescriptor* dep = file_->dependency(i);
 
-    // Do not import weak deps.
-    if (IsDepWeak(dep)) {
+    if (ShouldSkipDependencyImports(dep)) {
       continue;
     }
 

@@ -1266,7 +1266,9 @@ public final class Descriptors {
      * Returns true if this field was syntactically written with "optional" in the .proto file.
      * Excludes singular proto3 fields that do not have a label.
      */
-    public boolean hasOptionalKeyword() {
+    @Deprecated
+    public
+    boolean hasOptionalKeyword() {
       return isProto3Optional
           || (file.getSyntax() == Syntax.PROTO2 && isOptional() && getContainingOneof() == null);
     }
@@ -2820,10 +2822,6 @@ public final class Descriptors {
       return proto.getOptions();
     }
 
-    public boolean isSynthetic() {
-      return fields.length == 1 && fields[0].isProto3Optional;
-    }
-
     /** Get a list of this message type's fields. */
     public List<FieldDescriptor> getFields() {
       return Collections.unmodifiableList(Arrays.asList(fields));
@@ -2836,6 +2834,12 @@ public final class Descriptors {
     @Override
     public OneofDescriptorProto toProto() {
       return proto;
+    }
+
+    @Deprecated
+    public
+    boolean isSynthetic() {
+      return fields.length == 1 && fields[0].isProto3Optional;
     }
 
     private void setProto(final OneofDescriptorProto proto) {

@@ -201,6 +201,7 @@ void SingularMessage::GenerateInlineAccessorDefinitions(io::Printer* p) const {
       },
       R"cc(
         inline const $Submsg$& $Msg$::_internal_$name$() const {
+          $TsanDetectConcurrentRead$;
           $StrongRef$;
           const $Submsg$* p = $cast_field_$;
           return p != nullptr ? *p : reinterpret_cast<const $Submsg$&>($kDefault$);
@@ -211,6 +212,7 @@ void SingularMessage::GenerateInlineAccessorDefinitions(io::Printer* p) const {
           return _internal_$name$();
         }
         inline void $Msg$::unsafe_arena_set_allocated_$name$($Submsg$* value) {
+          $TsanDetectConcurrentMutation$;
           $PrepareSplitMessageForWrite$;
           //~ If we're not on an arena, free whatever we were holding before.
           //~ (If we are on arena, we can just forget the earlier pointer.)
@@ -223,6 +225,7 @@ void SingularMessage::GenerateInlineAccessorDefinitions(io::Printer* p) const {
           // @@protoc_insertion_point(field_unsafe_arena_set_allocated:$pkg.Msg.field$)
         }
         inline $Submsg$* $Msg$::$release_name$() {
+          $TsanDetectConcurrentMutation$;
           $StrongRef$;
           $annotate_release$;
           $PrepareSplitMessageForWrite$;
@@ -244,6 +247,7 @@ void SingularMessage::GenerateInlineAccessorDefinitions(io::Printer* p) const {
           return released;
         }
         inline $Submsg$* $Msg$::unsafe_arena_release_$name$() {
+          $TsanDetectConcurrentMutation$;
           $annotate_release$;
           // @@protoc_insertion_point(field_release:$pkg.Msg.field$)
           $StrongRef$;
@@ -255,6 +259,7 @@ void SingularMessage::GenerateInlineAccessorDefinitions(io::Printer* p) const {
           return temp;
         }
         inline $Submsg$* $Msg$::_internal_mutable_$name$() {
+          $TsanDetectConcurrentMutation$;
           $StrongRef$;
           $set_hasbit$;
           if ($field_$ == nullptr) {
@@ -276,6 +281,7 @@ void SingularMessage::GenerateInlineAccessorDefinitions(io::Printer* p) const {
         //~ cases to the slow fallback function.
         inline void $Msg$::set_allocated_$name$($Submsg$* value) {
           $pb$::Arena* message_arena = GetArenaForAllocation();
+          $TsanDetectConcurrentMutation$;
           $PrepareSplitMessageForWrite$;
           if (message_arena == nullptr) {
             delete $base_cast$($field_$);
@@ -826,27 +832,25 @@ void RepeatedMessage::GenerateInlineAccessorDefinitions(io::Printer* p) const {
       "}\n");
 
   p->Emit(R"cc(
-    inline const $pb$::RepeatedPtrField<$Submsg$>&
-    $classname$::_internal_$name$() const {
+    inline const $pb$::$Weak$RepeatedPtrField<$Submsg$>&
+    $Msg$::_internal$_weak$_$name$() const {
       $TsanDetectConcurrentRead$;
-      return $field$$.weak$;
+      return $field_$;
     }
-    inline $pb$::RepeatedPtrField<$Submsg$>*
-    $classname$::_internal_mutable_$name$() {
+    inline $pb$::$Weak$RepeatedPtrField<$Submsg$>*
+    $Msg$::_internal_mutable$_weak$_$name$() {
       $TsanDetectConcurrentRead$;
-      return &$field$$.weak$;
+      return &$field_$;
     }
   )cc");
   if (weak_) {
     p->Emit(R"cc(
-      inline const $pb$::WeakRepeatedPtrField<$Submsg$>&
-      $Msg$::_internal_weak_$name$() const {
-        $TsanDetectConcurrentRead$;
-        return $field$;
+      inline const $pb$::RepeatedPtrField<$Submsg$>& $Msg$::_internal_$name$()
+          const {
+        return _internal_weak_$name$().weak;
       }
-      inline $pb$::WeakRepeatedPtrField<$Submsg$>*
-      $Msg$::_internal_mutable_weak_$name$() {
-        return &$field$;
+      inline $pb$::RepeatedPtrField<$Submsg$>* $Msg$::_internal_mutable_$name$() {
+        return &_internal_mutable_weak_$name$()->weak;
       }
     )cc");
   }
@@ -863,9 +867,10 @@ void RepeatedMessage::GenerateMergingCode(io::Printer* p) const {
 }
 
 void RepeatedMessage::GenerateSwappingCode(io::Printer* p) const {
-  p->Emit(
-      "_internal_mutable$_weak$_$name$()->InternalSwap(other->_internal_"
-      "mutable$_weak$_$name$());\n");
+  ABSL_CHECK(!ShouldSplit(descriptor_, options_));
+  p->Emit(R"cc(
+    $field_$.InternalSwap(&other->$field_$);
+  )cc");
 }
 
 void RepeatedMessage::GenerateConstructorCode(io::Printer* p) const {
