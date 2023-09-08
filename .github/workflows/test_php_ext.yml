@@ -22,11 +22,12 @@ jobs:
           ref: ${{ inputs.safe-checkout }}
 
       - name: Package extension
-        uses: protocolbuffers/protobuf-ci/bazel@v1
+        uses: protocolbuffers/protobuf-ci/bazel@v2
         with:
           credentials: ${{ secrets.GAR_SERVICE_ACCOUNT }}
           bazel-cache: php_ext/${{ matrix.version }}
           bash: >
+            ./regenerate_stale_files.sh $BAZEL_FLAGS;
             bazel build //php:release $BAZEL_FLAGS;
             cp bazel-bin/php/protobuf-*.tgz .
 

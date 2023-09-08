@@ -33,6 +33,7 @@ package com.google.protobuf;
 import static com.google.protobuf.Internal.checkNotNull;
 
 import com.google.protobuf.DescriptorProtos.DescriptorProto;
+import com.google.protobuf.DescriptorProtos.Edition;
 import com.google.protobuf.DescriptorProtos.EnumDescriptorProto;
 import com.google.protobuf.DescriptorProtos.EnumOptions;
 import com.google.protobuf.DescriptorProtos.EnumValueDescriptorProto;
@@ -167,7 +168,8 @@ public final class Descriptors {
     enum Syntax {
       UNKNOWN("unknown"),
       PROTO2("proto2"),
-      PROTO3("proto3");
+      PROTO3("proto3"),
+      EDITIONS("editions");
 
       Syntax(String name) {
         this.name = name;
@@ -182,14 +184,33 @@ public final class Descriptors {
     Syntax getSyntax() {
       if (Syntax.PROTO3.name.equals(proto.getSyntax())) {
         return Syntax.PROTO3;
+      } else if (Syntax.EDITIONS.name.equals(proto.getSyntax())) {
+        return Syntax.EDITIONS;
       }
       return Syntax.PROTO2;
+    }
+
+    /** Get the edition of the .proto file. */
+    public Edition getEdition() {
+      return proto.getEditionEnum();
+    }
+
+    /** Gets the name of the edition as specified in the .proto file. */
+    public String getEditionName() {
+      if (proto.getEditionEnum().equals(Edition.EDITION_UNKNOWN)) {
+        return "";
+      }
+      return proto.getEditionEnum().name().substring("EDITION_".length());
     }
 
     public void copyHeadingTo(FileDescriptorProto.Builder protoBuilder) {
       protoBuilder.setName(getName()).setSyntax(getSyntax().name);
       if (!getPackage().isEmpty()) {
         protoBuilder.setPackage(getPackage());
+      }
+
+      if (getSyntax().equals(Syntax.EDITIONS)) {
+        protoBuilder.setEditionEnum(getEdition());
       }
 
       if (!getOptions().equals(FileOptions.getDefaultInstance())) {

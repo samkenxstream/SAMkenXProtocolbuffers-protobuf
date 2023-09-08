@@ -30,19 +30,24 @@
 
 #include "google/protobuf/compiler/objectivec/field.h"
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
+#include "absl/container/btree_set.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/log/absl_check.h"
 #include "absl/log/absl_log.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "google/protobuf/compiler/objectivec/enum_field.h"
 #include "google/protobuf/compiler/objectivec/helpers.h"
 #include "google/protobuf/compiler/objectivec/map_field.h"
 #include "google/protobuf/compiler/objectivec/message_field.h"
 #include "google/protobuf/compiler/objectivec/names.h"
 #include "google/protobuf/compiler/objectivec/primitive_field.h"
+#include "google/protobuf/descriptor.h"
 #include "google/protobuf/io/printer.h"
 
 namespace google {
@@ -126,14 +131,9 @@ bool HasNonZeroDefaultValue(const FieldDescriptor* field) {
     return false;
   }
 
-  // As much as checking field->has_default_value() seems useful, it isn't
-  // because of enums. proto2 syntax allows the first item in an enum (the
-  // default) to be non zero. So checking field->has_default_value() would
-  // result in missing this non zero default.  See MessageWithOneBasedEnum in
-  // objectivec/Tests/unittest_objc.proto for a test Message to confirm this.
-
-  // Some proto file set the default to the zero value, so make sure the value
-  // isn't the zero case.
+  // Some proto files set the default to the zero value, so make sure the value
+  // isn't the zero case instead of relying on has_default_value() to tell when
+  // non zero.
   switch (field->cpp_type()) {
     case FieldDescriptor::CPPTYPE_INT32:
       return field->default_value_int32() != 0;
@@ -151,9 +151,12 @@ bool HasNonZeroDefaultValue(const FieldDescriptor* field) {
       return field->default_value_bool();
     case FieldDescriptor::CPPTYPE_STRING: {
       const std::string& default_string = field->default_value_string();
-      return default_string.length() != 0;
+      return !default_string.empty();
     }
     case FieldDescriptor::CPPTYPE_ENUM:
+      // The default value for an enum field is the first enum value, so there
+      // even more reason we can't use has_default_value() for checking for
+      // zero.
       return field->default_value_enum()->number() != 0;
     case FieldDescriptor::CPPTYPE_MESSAGE:
       return false;
@@ -235,6 +238,11 @@ void FieldGenerator::DetermineForwardDeclarations(
 
 void FieldGenerator::DetermineObjectiveCClassDefinitions(
     absl::btree_set<std::string>* fwd_decls) const {
+  // Nothing
+}
+
+void FieldGenerator::DetermineNeededFiles(
+    absl::flat_hash_set<const FileDescriptor*>* deps) const {
   // Nothing
 }
 
@@ -449,15 +457,9 @@ void RepeatedFieldGenerator::EmitArrayComment(io::Printer* printer) const {
 
 FieldGeneratorMap::FieldGeneratorMap(const Descriptor* descriptor)
     : descriptor_(descriptor),
-      field_generators_(descriptor->field_count()),
-      extension_generators_(descriptor->extension_count()) {
-  // Construct all the FieldGenerators.
+      field_generators_(static_cast<size_t>(descriptor->field_count())) {
   for (int i = 0; i < descriptor->field_count(); i++) {
     field_generators_[i].reset(FieldGenerator::Make(descriptor->field(i)));
-  }
-  for (int i = 0; i < descriptor->extension_count(); i++) {
-    extension_generators_[i].reset(
-        FieldGenerator::Make(descriptor->extension(i)));
   }
 }
 
@@ -465,10 +467,6 @@ const FieldGenerator& FieldGeneratorMap::get(
     const FieldDescriptor* field) const {
   ABSL_CHECK_EQ(field->containing_type(), descriptor_);
   return *field_generators_[field->index()];
-}
-
-const FieldGenerator& FieldGeneratorMap::get_extension(int index) const {
-  return *extension_generators_[index];
 }
 
 int FieldGeneratorMap::CalculateHasBits() {

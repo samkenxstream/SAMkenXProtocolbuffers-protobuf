@@ -35,8 +35,6 @@
 #ifndef GOOGLE_PROTOBUF_COMPILER_CPP_HELPERS_H__
 #define GOOGLE_PROTOBUF_COMPILER_CPP_HELPERS_H__
 
-#include <algorithm>
-#include <cstdint>
 #include <iterator>
 #include <string>
 #include <tuple>
@@ -229,6 +227,12 @@ std::string FieldMemberName(const FieldDescriptor* field, bool split);
 // 64-bit pointers.
 int EstimateAlignmentSize(const FieldDescriptor* field);
 
+// Returns an estimate of the size of the field.  This
+// can't guarantee to be correct because the generated code could be compiled on
+// different systems with different alignment rules.  The estimates below assume
+// 64-bit pointers.
+int EstimateSize(const FieldDescriptor* field);
+
 // Get the unqualified name that should be used for a field's field
 // number constant.
 std::string FieldConstantName(const FieldDescriptor* field);
@@ -345,7 +349,7 @@ inline bool IsWeak(const FieldDescriptor* field, const Options& options) {
   return false;
 }
 
-inline bool IsCord(const FieldDescriptor* field, const Options& options) {
+inline bool IsCord(const FieldDescriptor* field) {
   return field->cpp_type() == FieldDescriptor::CPPTYPE_STRING &&
          internal::cpp::EffectiveStringCType(field) == FieldOptions::CORD;
 }
@@ -355,8 +359,7 @@ inline bool IsString(const FieldDescriptor* field, const Options& options) {
          internal::cpp::EffectiveStringCType(field) == FieldOptions::STRING;
 }
 
-inline bool IsStringPiece(const FieldDescriptor* field,
-                          const Options& options) {
+inline bool IsStringPiece(const FieldDescriptor* field) {
   return field->cpp_type() == FieldDescriptor::CPPTYPE_STRING &&
          internal::cpp::EffectiveStringCType(field) ==
              FieldOptions::STRING_PIECE;
@@ -367,8 +370,13 @@ bool IsProfileDriven(const Options& options);
 // Returns true if `field` is unlikely to be present based on PDProto profile.
 bool IsRarelyPresent(const FieldDescriptor* field, const Options& options);
 
+// Returns true if `field` is likely to be present based on PDProto profile.
+bool IsLikelyPresent(const FieldDescriptor* field, const Options& options);
+
 float GetPresenceProbability(const FieldDescriptor* field,
                              const Options& options);
+
+bool IsStringInliningEnabled(const Options& options);
 
 // Returns true if `field` should be inlined based on PDProto profile.
 bool IsStringInlined(const FieldDescriptor* field, const Options& options);
@@ -829,10 +837,6 @@ class PROTOC_EXPORT Formatter {
     vars_[key] = ToString(value);
   }
 
-  void AddMap(const absl::flat_hash_map<absl::string_view, std::string>& vars) {
-    for (const auto& keyval : vars) vars_[keyval.first] = keyval.second;
-  }
-
   template <typename... Args>
   void operator()(const char* format, const Args&... args) const {
     printer_->FormatInternal({ToString(args)...}, vars_, format);
@@ -862,17 +866,6 @@ class PROTOC_EXPORT Formatter {
     (*this)(format, static_cast<Args&&>(args)...);
     return ScopedIndenter(this);
   }
-
-  class PROTOC_EXPORT SaveState {
-   public:
-    explicit SaveState(Formatter* format)
-        : format_(format), vars_(format->vars_) {}
-    ~SaveState() { format_->vars_.swap(vars_); }
-
-   private:
-    Formatter* format_;
-    absl::flat_hash_map<absl::string_view, std::string> vars_;
-  };
 
  private:
   io::Printer* printer_;
@@ -974,21 +967,37 @@ void PrintFieldComment(const Formatter& format, const T* field,
 
 class PROTOC_EXPORT NamespaceOpener {
  public:
-  explicit NamespaceOpener(io::Printer* p) : p_(p) {}
-  explicit NamespaceOpener(const Formatter& format) : p_(format.printer()) {}
-  NamespaceOpener(absl::string_view name, const Formatter& format)
-      : NamespaceOpener(format) {
-    ChangeTo(name);
-  }
-  NamespaceOpener(absl::string_view name, io::Printer* p) : NamespaceOpener(p) {
-    ChangeTo(name);
-  }
-  ~NamespaceOpener() { ChangeTo(""); }
+  explicit NamespaceOpener(
+      io::Printer* p,
+      io::Printer::SourceLocation loc = io::Printer::SourceLocation::current())
+      : p_(p), loc_(loc) {}
 
-  void ChangeTo(absl::string_view name);
+  explicit NamespaceOpener(
+      const Formatter& format,
+      io::Printer::SourceLocation loc = io::Printer::SourceLocation::current())
+      : NamespaceOpener(format.printer(), loc) {}
+
+  NamespaceOpener(
+      absl::string_view name, const Formatter& format,
+      io::Printer::SourceLocation loc = io::Printer::SourceLocation::current())
+      : NamespaceOpener(name, format.printer(), loc) {}
+
+  NamespaceOpener(
+      absl::string_view name, io::Printer* p,
+      io::Printer::SourceLocation loc = io::Printer::SourceLocation::current())
+      : NamespaceOpener(p, loc) {
+    ChangeTo(name, loc);
+  }
+
+  ~NamespaceOpener() { ChangeTo("", loc_); }
+
+  void ChangeTo(
+      absl::string_view name,
+      io::Printer::SourceLocation loc = io::Printer::SourceLocation::current());
 
  private:
   io::Printer* p_;
+  io::Printer::SourceLocation loc_;
   std::vector<std::string> name_stack_;
 };
 
@@ -1010,6 +1019,14 @@ void GenerateUtf8CheckCodeForString(io::Printer* p,
 void GenerateUtf8CheckCodeForCord(io::Printer* p, const FieldDescriptor* field,
                                   const Options& options, bool for_parse,
                                   absl::string_view parameters);
+
+inline bool ShouldGenerateExternSpecializations(const Options& options) {
+  // For OSS we omit the specializations to reduce codegen size.
+  // Some compilers can't handle that much input in a single translation unit.
+  // These specializations are just a link size optimization and do not affect
+  // correctness or performance, so it is ok to omit them.
+  return !options.opensource_runtime;
+}
 
 struct OneOfRangeImpl {
   struct Iterator {
@@ -1065,6 +1082,11 @@ std::vector<io::Printer::Sub> AnnotatedAccessors(
 // friends. This file needs special handling because it must be usable during
 // dynamic initialization.
 bool IsFileDescriptorProto(const FileDescriptor* file, const Options& options);
+
+// Determine if we should generate a class for the descriptor.
+// Some descriptors, like some map entries, are not represented as a generated
+// class.
+bool ShouldGenerateClass(const Descriptor* descriptor, const Options& options);
 
 }  // namespace cpp
 }  // namespace compiler

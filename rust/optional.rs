@@ -234,7 +234,7 @@ pub struct PresentField<'msg, T>
 where
     T: ProxiedWithPresence + ?Sized + 'msg,
 {
-    inner: T::PresentMutData<'msg>,
+    pub(crate) inner: T::PresentMutData<'msg>,
 }
 
 impl<'msg, T: ProxiedWithPresence + ?Sized + 'msg> Debug for PresentField<'msg, T> {
@@ -312,7 +312,7 @@ pub struct AbsentField<'a, T>
 where
     T: ProxiedWithPresence + ?Sized + 'a,
 {
-    inner: T::AbsentMutData<'a>,
+    pub(crate) inner: T::AbsentMutData<'a>,
 }
 
 impl<'msg, T: ProxiedWithPresence + ?Sized + 'msg> Debug for AbsentField<'msg, T> {
@@ -505,26 +505,12 @@ mod tests {
         msg.presence & (1 << B_BIT) != 0
     }
 
+    #[derive(Debug)]
     struct ProxyVtable {
         get: fn(&MyMessage) -> i32,
         set: fn(&mut MyMessage, val: i32),
         clear: fn(&mut MyMessage),
         has: fn(&MyMessage) -> bool,
-    }
-
-    impl Debug for ProxyVtable {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            // Manual `Debug` impl to work around `fmt::Debug` not being implemented for
-            // functions pointers with higher-ranked lifetimes, which was fixed
-            // in Rust 1.70.
-            // TODO(hlopko): replace with `#[derive(Debug)]` when rustc is updated.
-            f.debug_struct("ProxyVtable")
-                .field("get", &(self.get as *const ()))
-                .field("set", &(self.set as *const ()))
-                .field("clear", &(self.clear as *const ()))
-                .field("has", &(self.has as *const ()))
-                .finish()
-        }
     }
 
     /// A proxy for a `i32` that is accessed through methods on a vtable.
@@ -553,7 +539,11 @@ mod tests {
         fn set_absent_to_default<'a>(
             absent_mutator: Self::AbsentMutData<'a>,
         ) -> Self::PresentMutData<'a> {
-            absent_mutator.as_view().val().set_on_absent(Private, absent_mutator)
+            SettableValue::<VtableProxied>::set_on_absent(
+                absent_mutator.as_view().val(),
+                Private,
+                absent_mutator,
+            )
         }
     }
 
@@ -623,7 +613,7 @@ mod tests {
 
     impl SettableValue<VtableProxied> for View<'_, VtableProxied> {
         fn set_on(self, _private: Private, mutator: Mut<VtableProxied>) {
-            self.val().set_on(Private, mutator)
+            SettableValue::<VtableProxied>::set_on(self.val(), Private, mutator)
         }
 
         fn set_on_absent<'a>(
@@ -631,7 +621,7 @@ mod tests {
             _private: Private,
             absent_mutator: <VtableProxied as ProxiedWithPresence>::AbsentMutData<'a>,
         ) -> <VtableProxied as ProxiedWithPresence>::PresentMutData<'a> {
-            self.val().set_on_absent(Private, absent_mutator)
+            SettableValue::<VtableProxied>::set_on_absent(self.val(), Private, absent_mutator)
         }
     }
 

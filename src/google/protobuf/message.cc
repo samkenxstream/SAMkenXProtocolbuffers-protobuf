@@ -102,9 +102,14 @@ void Message::CopyFrom(const Message& from) {
 
   auto* class_to = GetClassData();
   auto* class_from = from.GetClassData();
-  auto* copy_to_from = class_to ? class_to->copy_to_from : nullptr;
 
-  if (class_to == nullptr || class_to != class_from) {
+  if (class_from != nullptr && class_from == class_to) {
+    // Fail if "from" is a descendant of "to" as such copy is not allowed.
+    ABSL_DCHECK(!internal::IsDescendant(*this, from))
+        << "Source of CopyFrom cannot be a descendant of the target.";
+    Clear();
+    class_to->merge_to_from(*this, from);
+  } else {
     const Descriptor* descriptor = GetDescriptor();
     ABSL_CHECK_EQ(from.GetDescriptor(), descriptor)
         << ": Tried to copy from a message with a different type. "
@@ -113,20 +118,11 @@ void Message::CopyFrom(const Message& from) {
         << ", "
            "from: "
         << from.GetDescriptor()->full_name();
-    copy_to_from = [](Message& to, const Message& from) {
-      ReflectionOps::Copy(from, &to);
-    };
+    ReflectionOps::Copy(from, this);
   }
-  copy_to_from(*this, from);
 }
 
 void Message::CopyWithSourceCheck(Message& to, const Message& from) {
-  // Fail if "from" is a descendant of "to" as such copy is not allowed.
-  ABSL_DCHECK(!internal::IsDescendant(to, from))
-      << "Source of CopyFrom cannot be a descendant of the target.";
-
-  to.Clear();
-  to.GetClassData()->merge_to_from(to, from);
 }
 
 std::string Message::GetTypeName() const {
@@ -179,14 +175,15 @@ uint8_t* Message::_InternalSerialize(uint8_t* target,
 
 size_t Message::ByteSizeLong() const {
   size_t size = WireFormat::ByteSize(*this);
-  SetCachedSize(internal::ToCachedSize(size));
-  return size;
-}
 
-void Message::SetCachedSize(int /* size */) const {
-  ABSL_LOG(FATAL) << "Message class \"" << GetDescriptor()->full_name()
-                  << "\" implements neither SetCachedSize() nor ByteSize().  "
-                     "Must implement one or the other.";
+  auto* cached_size = AccessCachedSize();
+  ABSL_CHECK(cached_size != nullptr)
+      << "Message class \"" << GetDescriptor()->full_name()
+      << "\" implements neither AccessCachedSize() nor ByteSizeLong().  "
+         "Must implement one or the other.";
+  cached_size->Set(internal::ToCachedSize(size));
+
+  return size;
 }
 
 size_t Message::ComputeUnknownFieldsSize(
@@ -209,10 +206,6 @@ size_t Message::MaybeComputeUnknownFieldsSize(
 
 size_t Message::SpaceUsedLong() const {
   return GetReflection()->SpaceUsedLong(*this);
-}
-
-uint64_t Message::GetInvariantPerBuild(uint64_t salt) {
-  return salt;
 }
 
 namespace internal {

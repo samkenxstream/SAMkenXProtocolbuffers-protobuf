@@ -82,23 +82,42 @@ std::string GetHeaderFile(Context<FileDescriptor> file) {
   return absl::StrCat(basename, ".proto.h");
 }
 
-std::string Thunk(Context<FieldDescriptor> field, absl::string_view op) {
+namespace {
+
+template <typename T>
+std::string Thunk(Context<T> field, absl::string_view op) {
   // NOTE: When field.is_upb(), this functions outputs must match the symbols
   // that the upbc plugin generates exactly. Failure to do so correctly results
   // in a link-time failure.
-
   absl::string_view prefix = field.is_cpp() ? "__rust_proto_thunk__" : "";
   std::string thunk =
       absl::StrCat(prefix, GetUnderscoreDelimitedFullName(
                                field.WithDesc(field.desc().containing_type())));
 
+  absl::string_view format;
   if (field.is_upb() && op == "get") {
-    absl::SubstituteAndAppend(&thunk, "_$0", field.desc().name());
+    // upb getter is simply the field name (no "get" in the name).
+    format = "_$1";
+  } else if (field.is_upb() && op == "case") {
+    // upb oneof case function is x_case compared to has/set/clear which are in
+    // the other order e.g. clear_x.
+    format = "_$1_$0";
   } else {
-    absl::SubstituteAndAppend(&thunk, "_$0_$1", op, field.desc().name());
+    format = "_$0_$1";
   }
 
+  absl::SubstituteAndAppend(&thunk, format, op, field.desc().name());
   return thunk;
+}
+
+}  // namespace
+
+std::string Thunk(Context<FieldDescriptor> field, absl::string_view op) {
+  return Thunk<FieldDescriptor>(field, op);
+}
+
+std::string Thunk(Context<OneofDescriptor> field, absl::string_view op) {
+  return Thunk<OneofDescriptor>(field, op);
 }
 
 std::string Thunk(Context<Descriptor> msg, absl::string_view op) {
@@ -106,20 +125,22 @@ std::string Thunk(Context<Descriptor> msg, absl::string_view op) {
   return absl::StrCat(prefix, GetUnderscoreDelimitedFullName(msg), "_", op);
 }
 
-absl::string_view PrimitiveRsTypeName(Context<FieldDescriptor> field) {
-  switch (field.desc().type()) {
+std::string PrimitiveRsTypeName(const FieldDescriptor& desc) {
+  switch (desc.type()) {
     case FieldDescriptor::TYPE_BOOL:
       return "bool";
     case FieldDescriptor::TYPE_INT32:
+    case FieldDescriptor::TYPE_SINT32:
+    case FieldDescriptor::TYPE_SFIXED32:
       return "i32";
     case FieldDescriptor::TYPE_INT64:
-      return "i64";
-    case FieldDescriptor::TYPE_SINT32:
-      return "i32";
     case FieldDescriptor::TYPE_SINT64:
+    case FieldDescriptor::TYPE_SFIXED64:
       return "i64";
+    case FieldDescriptor::TYPE_FIXED32:
     case FieldDescriptor::TYPE_UINT32:
       return "u32";
+    case FieldDescriptor::TYPE_FIXED64:
     case FieldDescriptor::TYPE_UINT64:
       return "u64";
     case FieldDescriptor::TYPE_FLOAT:
@@ -127,29 +148,14 @@ absl::string_view PrimitiveRsTypeName(Context<FieldDescriptor> field) {
     case FieldDescriptor::TYPE_DOUBLE:
       return "f64";
     case FieldDescriptor::TYPE_BYTES:
-      return "&[u8]";
+      return "[u8]";
+    case FieldDescriptor::TYPE_STRING:
+      return "::__pb::ProtoStr";
     default:
       break;
   }
-  ABSL_LOG(FATAL) << "Unsupported field type: " << field.desc().type_name();
+  ABSL_LOG(FATAL) << "Unsupported field type: " << desc.type_name();
   return "";
-}
-
-bool IsSupportedFieldType(Context<FieldDescriptor> field) {
-  return !field.desc().is_repeated() &&
-         // We do not support [ctype=FOO] (used to set the field type in C++ to
-         // cord or string_piece) in V0 API.
-         !field.desc().options().has_ctype() &&
-         (field.desc().type() == FieldDescriptor::TYPE_BOOL ||
-          field.desc().type() == FieldDescriptor::TYPE_INT32 ||
-          field.desc().type() == FieldDescriptor::TYPE_INT64 ||
-          field.desc().type() == FieldDescriptor::TYPE_SINT32 ||
-          field.desc().type() == FieldDescriptor::TYPE_SINT64 ||
-          field.desc().type() == FieldDescriptor::TYPE_UINT32 ||
-          field.desc().type() == FieldDescriptor::TYPE_UINT64 ||
-          field.desc().type() == FieldDescriptor::TYPE_FLOAT ||
-          field.desc().type() == FieldDescriptor::TYPE_DOUBLE ||
-          field.desc().type() == FieldDescriptor::TYPE_BYTES);
 }
 
 std::string RustModule(Context<Descriptor> msg) {
@@ -158,7 +164,16 @@ std::string RustModule(Context<Descriptor> msg) {
   return absl::StrCat("", absl::StrReplaceAll(package, {{".", "::"}}));
 }
 
+std::string RustInternalModuleName(Context<FileDescriptor> file) {
+  // TODO(b/291853557): Introduce a more robust mangling here to avoid conflicts
+  // between `foo/bar/baz.proto` and `foo_bar/baz.proto`.
+  return absl::StrReplaceAll(StripProto(file.desc().name()), {{"/", "_"}});
+}
+
 std::string GetCrateRelativeQualifiedPath(Context<Descriptor> msg) {
+  if (msg.desc().file()->package().empty()) {
+    return msg.desc().name();
+  }
   return absl::StrCat(RustModule(msg), "::", msg.desc().name());
 }
 
@@ -178,6 +193,7 @@ std::string FieldInfoComment(Context<FieldDescriptor> field) {
 
   return comment;
 }
+
 }  // namespace rust
 }  // namespace compiler
 }  // namespace protobuf

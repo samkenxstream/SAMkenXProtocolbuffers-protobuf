@@ -49,6 +49,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
+#include "google/protobuf/descriptor.pb.h"
 #include "google/protobuf/port.h"
 
 // Must be included last.
@@ -292,6 +293,8 @@ class PROTOC_EXPORT CommandLineInterface {
                        DiskSourceTree* source_tree,
                        std::vector<const FileDescriptor*>* parsed_files);
 
+  bool SetupFeatureResolution(DescriptorPool& pool);
+
   // Generate the given output file from the given input.
   struct OutputDirective;  // see below
   bool GenerateOutput(const std::vector<const FileDescriptor*>& parsed_files,
@@ -308,6 +311,9 @@ class PROTOC_EXPORT CommandLineInterface {
   // Implements the --descriptor_set_out option.
   bool WriteDescriptorSet(
       const std::vector<const FileDescriptor*>& parsed_files);
+
+  // Implements the --experimental_edition_defaults_out option.
+  bool WriteExperimentalEditionDefaults(const DescriptorPool& pool);
 
   // Implements the --dependency_out option
   bool GenerateDependencyManifestFile(
@@ -446,13 +452,15 @@ class PROTOC_EXPORT CommandLineInterface {
   // FileDescriptorSet should be written.  Otherwise, empty.
   std::string descriptor_set_out_name_;
 
+  std::string experimental_edition_defaults_out_name_;
+  Edition experimental_edition_defaults_minimum_;
+  Edition experimental_edition_defaults_maximum_;
+
   // If --dependency_out was given, this is the path to the file where the
   // dependency file will be written. Otherwise, empty.
   std::string dependency_out_name_;
 
-#ifdef PROTOBUF_FUTURE_EDITIONS
   bool experimental_editions_ = false;
-#endif  // PROTOBUF_FUTURE_EDITIONS
 
   // True if --include_imports was given, meaning that we should
   // write all transitive dependencies to the DescriptorSet.  Otherwise, only

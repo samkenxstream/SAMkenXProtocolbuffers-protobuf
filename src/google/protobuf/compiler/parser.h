@@ -403,12 +403,18 @@ class PROTOBUF_EXPORT Parser {
   bool ParseReservedNames(DescriptorProto* message,
                           const LocationRecorder& parent_location);
   bool ParseReservedName(std::string* name, absl::string_view error_message);
+  bool ParseReservedIdentifiers(DescriptorProto* message,
+                                const LocationRecorder& parent_location);
+  bool ParseReservedIdentifier(std::string* name,
+                               absl::string_view error_message);
   bool ParseReservedNumbers(DescriptorProto* message,
                             const LocationRecorder& parent_location);
   bool ParseReserved(EnumDescriptorProto* message,
                      const LocationRecorder& message_location);
   bool ParseReservedNames(EnumDescriptorProto* message,
                           const LocationRecorder& parent_location);
+  bool ParseReservedIdentifiers(EnumDescriptorProto* message,
+                                const LocationRecorder& parent_location);
   bool ParseReservedNumbers(EnumDescriptorProto* message,
                             const LocationRecorder& parent_location);
 
@@ -530,12 +536,11 @@ class PROTOBUF_EXPORT Parser {
 
   // Whether fields without label default to optional fields.
   bool DefaultToOptionalFields() const {
-#ifdef PROTOBUF_FUTURE_EDITIONS
     if (syntax_identifier_ == "editions") return true;
-#endif  // PROTOBUF_FUTURE_EDITIONS
     return syntax_identifier_ == "proto3";
   }
 
+  bool ValidateMessage(const DescriptorProto* proto);
   bool ValidateEnum(const EnumDescriptorProto* proto);
 
   // =================================================================
@@ -548,9 +553,7 @@ class PROTOBUF_EXPORT Parser {
   bool require_syntax_identifier_;
   bool stop_after_syntax_identifier_;
   std::string syntax_identifier_;
-#ifdef PROTOBUF_FUTURE_EDITIONS
-  std::string edition_;
-#endif  // PROTOBUF_FUTURE_EDITIONS
+  Edition edition_ = Edition::EDITION_UNKNOWN;
 
   // Leading doc comments for the next declaration.  These are not complete
   // yet; use ConsumeEndOfDeclaration() to get the complete comments.

@@ -37,12 +37,17 @@
 #include <type_traits>
 #include <utility>
 
-#include "google/protobuf/port.h"
+#include "absl/log/absl_log.h"
 #include "google/protobuf/extension_set.h"
 #include "google/protobuf/generated_message_tctable_decl.h"
 #include "google/protobuf/map.h"
+#include "google/protobuf/message_lite.h"
 #include "google/protobuf/metadata_lite.h"
 #include "google/protobuf/parse_context.h"
+#include "google/protobuf/port.h"
+#include "google/protobuf/raw_ptr.h"
+#include "google/protobuf/repeated_field.h"
+#include "google/protobuf/repeated_ptr_field.h"
 #include "google/protobuf/wire_format_lite.h"
 
 // Must come last:
@@ -163,7 +168,7 @@ enum TransformValidation : uint16_t {
 
   // Varint fields:
   kTvZigZag    = 1 << kTvShift,
-  kTvEnum      = 2 << kTvShift,  // validate using generated _IsValid()
+  kTvEnum      = 2 << kTvShift,  // validate using ValidateEnum()
   kTvRange     = 3 << kTvShift,  // validate using FieldAux::enum_range
   // String fields:
   kTvUtf8Debug = 1 << kTvShift,  // proto2
@@ -375,7 +380,7 @@ inline void AlignFail(std::integral_constant<size_t, 1>,
   PROTOBUF_TC_PARSE_FUNCTION_LIST_END_GROUP()
 
 #define PROTOBUF_TC_PARSE_FUNCTION_X(value) k##value,
-enum class TcParseFunction { kNone, PROTOBUF_TC_PARSE_FUNCTION_LIST };
+enum class TcParseFunction : uint8_t { kNone, PROTOBUF_TC_PARSE_FUNCTION_LIST };
 #undef PROTOBUF_TC_PARSE_FUNCTION_X
 
 // TcParser implements most of the parsing logic for tailcall tables.
@@ -489,7 +494,7 @@ class PROTOBUF_EXPORT TcParser final {
 
   // Functions referenced by generated fast tables (closed enum):
   //   E: closed enum (N.B.: open enums use V32, above)
-  //   r: enum range  v: enum validator (_IsValid function)
+  //   r: enum range  v: enum validator (ValidateEnum function)
   //   S: singular   R: repeated   P: packed
   //   1/2: tag length (bytes)
   static const char* FastErS1(PROTOBUF_TC_PARAM_DECL);
@@ -576,10 +581,15 @@ class PROTOBUF_EXPORT TcParser final {
   static const char* FastMlS1(PROTOBUF_TC_PARAM_DECL);
   static const char* FastMlS2(PROTOBUF_TC_PARAM_DECL);
 
+  // NOTE: Do not dedup RefAt by having one call the other with a const_cast. It
+  // causes ICEs of gcc 7.5.
+  // https://github.com/protocolbuffers/protobuf/issues/13715
   template <typename T>
   static inline T& RefAt(void* x, size_t offset) {
     T* target = reinterpret_cast<T*>(static_cast<char*>(x) + offset);
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !(defined(_MSC_VER) && defined(_M_IX86))
+    // Check the alignment in debug mode, except in 32-bit msvc because it does
+    // not respect the alignment as expressed by `alignof(T)`
     if (PROTOBUF_PREDICT_FALSE(
             reinterpret_cast<uintptr_t>(target) % alignof(T) != 0)) {
       AlignFail(std::integral_constant<size_t, alignof(T)>(),
@@ -595,7 +605,9 @@ class PROTOBUF_EXPORT TcParser final {
   static inline const T& RefAt(const void* x, size_t offset) {
     const T* target =
         reinterpret_cast<const T*>(static_cast<const char*>(x) + offset);
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !(defined(_MSC_VER) && defined(_M_IX86))
+    // Check the alignment in debug mode, except in 32-bit msvc because it does
+    // not respect the alignment as expressed by `alignof(T)`
     if (PROTOBUF_PREDICT_FALSE(
             reinterpret_cast<uintptr_t>(target) % alignof(T) != 0)) {
       AlignFail(std::integral_constant<size_t, alignof(T)>(),
@@ -605,6 +617,30 @@ class PROTOBUF_EXPORT TcParser final {
     }
 #endif
     return *target;
+  }
+
+  template <typename T, bool is_split>
+  static inline T& MaybeCreateRepeatedRefAt(void* x, size_t offset,
+                                            MessageLite* msg) {
+    if (!is_split) return RefAt<T>(x, offset);
+    void*& ptr = RefAt<void*>(x, offset);
+    if (ptr == DefaultRawPtr()) {
+      ptr = Arena::CreateMessage<T>(msg->GetArenaForAllocation());
+    }
+    return *static_cast<T*>(ptr);
+  }
+
+  template <typename T, bool is_split>
+  static inline RepeatedField<T>& MaybeCreateRepeatedFieldRefAt(
+      void* x, size_t offset, MessageLite* msg) {
+    return MaybeCreateRepeatedRefAt<RepeatedField<T>, is_split>(x, offset, msg);
+  }
+
+  template <typename T, bool is_split>
+  static inline RepeatedPtrField<T>& MaybeCreateRepeatedPtrFieldRefAt(
+      void* x, size_t offset, MessageLite* msg) {
+    return MaybeCreateRepeatedRefAt<RepeatedPtrField<T>, is_split>(x, offset,
+                                                                   msg);
   }
 
   template <typename T>
@@ -632,15 +668,16 @@ class PROTOBUF_EXPORT TcParser final {
   template <typename MapField>
   static constexpr MapAuxInfo GetMapAuxInfo(bool fail_on_utf8_failure,
                                             bool log_debug_utf8_failure,
-                                            bool validated_enum_value) {
+                                            bool validated_enum_value,
+                                            int key_type, int value_type) {
     using MapType = typename MapField::MapType;
     using Node = typename MapType::Node;
     static_assert(alignof(Node) == alignof(NodeBase), "");
     // Verify the assumption made in MpMap, guaranteed by Map<>.
     assert(PROTOBUF_FIELD_OFFSET(Node, kv.first) == sizeof(NodeBase));
     return {
-        MakeMapTypeCard(MapField::kKeyFieldType),
-        MakeMapTypeCard(MapField::kValueFieldType),
+        MakeMapTypeCard(static_cast<WireFormatLite::FieldType>(key_type)),
+        MakeMapTypeCard(static_cast<WireFormatLite::FieldType>(value_type)),
         true,
         !std::is_base_of<MapFieldBaseForParse, MapField>::value,
         fail_on_utf8_failure,
@@ -661,7 +698,7 @@ class PROTOBUF_EXPORT TcParser final {
   static const char* FastVarintS1(PROTOBUF_TC_PARAM_DECL);
 
   friend class GeneratedTcTableLiteTest;
-  static void* MaybeGetSplitBase(MessageLite* msg, const bool is_split,
+  static void* MaybeGetSplitBase(MessageLite* msg, bool is_split,
                                  const TcParseTableBase* table);
 
   // Test only access to verify that the right function is being called via
@@ -864,21 +901,31 @@ class PROTOBUF_EXPORT TcParser final {
   // Mini parsing:
   template <bool is_split>
   static const char* MpVarint(PROTOBUF_TC_PARAM_DECL);
+  template <bool is_split>
   static const char* MpRepeatedVarint(PROTOBUF_TC_PARAM_DECL);
+  template <bool is_split, typename FieldType, uint16_t xform_val>
+  static const char* MpRepeatedVarintT(PROTOBUF_TC_PARAM_DECL);
+  template <bool is_split>
   static const char* MpPackedVarint(PROTOBUF_TC_PARAM_DECL);
+  template <bool is_split, typename FieldType, uint16_t xform_val>
+  static const char* MpPackedVarintT(PROTOBUF_TC_PARAM_DECL);
   template <bool is_split>
   static const char* MpFixed(PROTOBUF_TC_PARAM_DECL);
+  template <bool is_split>
   static const char* MpRepeatedFixed(PROTOBUF_TC_PARAM_DECL);
+  template <bool is_split>
   static const char* MpPackedFixed(PROTOBUF_TC_PARAM_DECL);
   template <bool is_split>
   static const char* MpString(PROTOBUF_TC_PARAM_DECL);
+  template <bool is_split>
   static const char* MpRepeatedString(PROTOBUF_TC_PARAM_DECL);
   template <bool is_split>
   static const char* MpMessage(PROTOBUF_TC_PARAM_DECL);
-  template <bool is_group>
+  template <bool is_split, bool is_group>
   static const char* MpRepeatedMessageOrGroup(PROTOBUF_TC_PARAM_DECL);
   static const char* MpLazyMessage(PROTOBUF_TC_PARAM_DECL);
   static const char* MpFallback(PROTOBUF_TC_PARAM_DECL);
+  template <bool is_split>
   static const char* MpMap(PROTOBUF_TC_PARAM_DECL);
 };
 

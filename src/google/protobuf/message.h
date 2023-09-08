@@ -116,14 +116,13 @@
 #include <vector>
 
 #include "google/protobuf/stubs/common.h"
-#include "google/protobuf/arena.h"
-#include "google/protobuf/port.h"
 #include "absl/base/attributes.h"
 #include "absl/base/call_once.h"
 #include "absl/base/casts.h"
 #include "absl/functional/function_ref.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/string_view.h"
+#include "google/protobuf/arena.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/generated_message_reflection.h"
 #include "google/protobuf/generated_message_tctable_decl.h"
@@ -367,17 +366,6 @@ class PROTOBUF_EXPORT Message : public MessageLite {
   uint8_t* _InternalSerialize(uint8_t* target,
                               io::EpsCopyOutputStream* stream) const override;
 
- private:
-  // This is called only by the default implementation of ByteSize(), to
-  // update the cached size.  If you override ByteSize(), you do not need
-  // to override this.  If you do not override ByteSize(), you MUST override
-  // this; the default implementation will crash.
-  //
-  // The method is private because subclasses should never call it; only
-  // override it.  Yes, C++ lets you do that.  Crazy, huh?
-  virtual void SetCachedSize(int size) const;
-
- public:
   // Introspection ---------------------------------------------------
 
 
@@ -399,9 +387,8 @@ class PROTOBUF_EXPORT Message : public MessageLite {
 
   struct ClassData {
     // Note: The order of arguments (to, then from) is chosen so that the ABI
-    // of this function is the same as the CopyFrom method.  That is, the
+    // of this function is the same as the MergeFrom method.  That is, the
     // hidden "this" parameter comes first.
-    void (*copy_to_from)(Message& to, const Message& from_msg);
     void (*merge_to_from)(Message& to, const Message& from_msg);
   };
   // GetClassData() returns a pointer to a ClassData struct which
@@ -423,9 +410,6 @@ class PROTOBUF_EXPORT Message : public MessageLite {
   size_t MaybeComputeUnknownFieldsSize(size_t total_size,
                                        internal::CachedSize* cached_size) const;
 
-
- protected:
-  static uint64_t GetInvariantPerBuild(uint64_t salt);
 };
 
 namespace internal {
@@ -1557,17 +1541,32 @@ void** Reflection::MutableSplitField(Message* message) const {
   return internal::GetPointerAtOffset<void*>(message, schema_.SplitOffset());
 }
 
+namespace internal {
+
+template <typename T>
+bool SplitFieldHasExtraIndirectionStatic(const FieldDescriptor* field) {
+  const bool ret = std::is_base_of<RepeatedFieldBase, T>() ||
+                   std::is_base_of<RepeatedPtrFieldBase, T>();
+  ABSL_DCHECK_EQ(SplitFieldHasExtraIndirection(field), ret);
+  return ret;
+}
+
+}  // namespace internal
+
 template <typename Type>
 const Type& Reflection::GetRaw(const Message& message,
                                const FieldDescriptor* field) const {
   ABSL_DCHECK(!schema_.InRealOneof(field) || HasOneofField(message, field))
       << "Field = " << field->full_name();
-  if (schema_.IsSplit(field)) {
-    return *internal::GetConstPointerAtOffset<Type>(
-        GetSplitField(&message), schema_.GetFieldOffset(field));
+  const uint32_t field_offset = schema_.GetFieldOffset(field);
+  if (!schema_.IsSplit(field)) {
+    return internal::GetConstRefAtOffset<Type>(message, field_offset);
   }
-  return internal::GetConstRefAtOffset<Type>(message,
-                                             schema_.GetFieldOffset(field));
+  const void* split = GetSplitField(&message);
+  if (internal::SplitFieldHasExtraIndirectionStatic<Type>(field)) {
+    return **internal::GetConstPointerAtOffset<Type*>(split, field_offset);
+  }
+  return *internal::GetConstPointerAtOffset<Type>(split, field_offset);
 }
 
 template <typename T>

@@ -30,17 +30,24 @@
 
 #include "google/protobuf/feature_resolver.h"
 
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/log/absl_check.h"
+#include "absl/log/absl_log.h"
+#include "absl/log/die_if_null.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
 #include "google/protobuf/compiler/parser.h"
+#include "google/protobuf/cpp_features.pb.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/descriptor.pb.h"
 #include "google/protobuf/io/tokenizer.h"
+#include "google/protobuf/io/zero_copy_stream_impl_lite.h"
 #include "google/protobuf/test_textproto.h"
 #include "google/protobuf/text_format.h"
 #include "google/protobuf/unittest_custom_options.pb.h"
@@ -59,7 +66,6 @@ using ::testing::ExplainMatchResult;
 using ::testing::HasSubstr;
 
 // TODO(b/234474291): Use the gtest versions once that's available in OSS.
-absl::Status GetStatus(const absl::Status& s) { return s; }
 template <typename T>
 absl::Status GetStatus(const absl::StatusOr<T>& s) {
   return s.status();
@@ -79,56 +85,68 @@ MATCHER_P(StatusIs, status,
 #define ASSERT_OK(x) ASSERT_THAT(x, StatusIs(absl::StatusCode::kOk))
 
 template <typename ExtensionT>
-const FileDescriptor& GetExtensionFile(
+const FieldDescriptor* GetExtension(
     const ExtensionT& ext,
     const Descriptor* descriptor = FeatureSet::descriptor()) {
-  return *DescriptorPool::generated_pool()
-              ->FindExtensionByNumber(descriptor, ext.number())
-              ->file();
+  return ABSL_DIE_IF_NULL(descriptor->file()->pool()->FindExtensionByNumber(
+      descriptor, ext.number()));
 }
 
 template <typename... Extensions>
-absl::StatusOr<FeatureResolver> SetupFeatureResolver(absl::string_view edition,
+absl::StatusOr<FeatureResolver> SetupFeatureResolver(Edition edition,
                                                      Extensions... extensions) {
-  auto resolver = FeatureResolver::Create(edition, FeatureSet::descriptor());
-  RETURN_IF_ERROR(resolver.status());
-  std::vector<absl::Status> results{
-      resolver->RegisterExtensions(GetExtensionFile(extensions))...};
-  for (absl::Status result : results) {
-    RETURN_IF_ERROR(result);
-  }
-  return resolver;
+  absl::StatusOr<FeatureSetDefaults> defaults =
+      FeatureResolver::CompileDefaults(FeatureSet::descriptor(),
+                                       {GetExtension(extensions)...},
+                                       EDITION_2023, EDITION_99997_TEST_ONLY);
+  RETURN_IF_ERROR(defaults.status());
+  return FeatureResolver::Create(edition, *defaults);
 }
 
-template <typename... Extensions>
-absl::StatusOr<FeatureSet> GetDefaults(absl::string_view edition,
-                                       Extensions... extensions) {
+absl::StatusOr<FeatureSet> GetDefaults(Edition edition,
+                                       const FeatureSetDefaults& defaults) {
   absl::StatusOr<FeatureResolver> resolver =
-      SetupFeatureResolver(edition, extensions...);
+      FeatureResolver::Create(edition, defaults);
   RETURN_IF_ERROR(resolver.status());
   FeatureSet parent, child;
   return resolver->MergeFeatures(parent, child);
 }
 
+template <typename... Extensions>
+absl::StatusOr<FeatureSet> GetDefaults(Edition edition,
+                                       Extensions... extensions) {
+  absl::StatusOr<FeatureSetDefaults> defaults =
+      FeatureResolver::CompileDefaults(FeatureSet::descriptor(),
+                                       {GetExtension(extensions)...},
+                                       EDITION_2023, EDITION_99999_TEST_ONLY);
+  RETURN_IF_ERROR(defaults.status());
+  return GetDefaults(edition, *defaults);
+}
+
+FileDescriptorProto GetProto(const FileDescriptor* file) {
+  FileDescriptorProto proto;
+  file->CopyTo(&proto);
+  return proto;
+}
+
 TEST(FeatureResolverTest, DefaultsCore2023) {
-  absl::StatusOr<FeatureSet> merged = GetDefaults("2023");
+  absl::StatusOr<FeatureSet> merged = GetDefaults(EDITION_2023);
   ASSERT_OK(merged);
 
   EXPECT_EQ(merged->field_presence(), FeatureSet::EXPLICIT);
   EXPECT_EQ(merged->enum_type(), FeatureSet::OPEN);
   EXPECT_EQ(merged->repeated_field_encoding(), FeatureSet::PACKED);
-  EXPECT_EQ(merged->string_field_validation(), FeatureSet::MANDATORY);
   EXPECT_EQ(merged->message_encoding(), FeatureSet::LENGTH_PREFIXED);
+  EXPECT_FALSE(merged->HasExtension(pb::test));
 }
 
 TEST(FeatureResolverTest, DefaultsTest2023) {
-  absl::StatusOr<FeatureSet> merged = GetDefaults("2023", pb::test);
+  absl::StatusOr<FeatureSet> merged = GetDefaults(EDITION_2023, pb::test);
   ASSERT_OK(merged);
 
   EXPECT_EQ(merged->field_presence(), FeatureSet::EXPLICIT);
   EXPECT_EQ(merged->enum_type(), FeatureSet::OPEN);
   EXPECT_EQ(merged->repeated_field_encoding(), FeatureSet::PACKED);
-  EXPECT_EQ(merged->string_field_validation(), FeatureSet::MANDATORY);
   EXPECT_EQ(merged->message_encoding(), FeatureSet::LENGTH_PREFIXED);
 
   const pb::TestFeatures& ext = merged->GetExtension(pb::test);
@@ -151,16 +169,17 @@ TEST(FeatureResolverTest, DefaultsTest2023) {
 
 TEST(FeatureResolverTest, DefaultsTestMessageExtension) {
   absl::StatusOr<FeatureSet> merged =
-      GetDefaults("2023", pb::TestMessage::test_message);
+      GetDefaults(EDITION_2023, pb::TestMessage::test_message);
   ASSERT_OK(merged);
 
   EXPECT_EQ(merged->field_presence(), FeatureSet::EXPLICIT);
   EXPECT_EQ(merged->enum_type(), FeatureSet::OPEN);
   EXPECT_EQ(merged->repeated_field_encoding(), FeatureSet::PACKED);
-  EXPECT_EQ(merged->string_field_validation(), FeatureSet::MANDATORY);
   EXPECT_EQ(merged->message_encoding(), FeatureSet::LENGTH_PREFIXED);
+  EXPECT_FALSE(merged->HasExtension(pb::test));
 
-  const pb::TestFeatures& ext = merged->GetExtension(pb::test);
+  const pb::TestFeatures& ext =
+      merged->GetExtension(pb::TestMessage::test_message);
   EXPECT_EQ(ext.int_file_feature(), 1);
   EXPECT_EQ(ext.int_extension_range_feature(), 1);
   EXPECT_EQ(ext.int_message_feature(), 1);
@@ -180,16 +199,17 @@ TEST(FeatureResolverTest, DefaultsTestMessageExtension) {
 
 TEST(FeatureResolverTest, DefaultsTestNestedExtension) {
   absl::StatusOr<FeatureSet> merged =
-      GetDefaults("2023", pb::TestMessage::Nested::test_nested);
+      GetDefaults(EDITION_2023, pb::TestMessage::Nested::test_nested);
   ASSERT_OK(merged);
 
   EXPECT_EQ(merged->field_presence(), FeatureSet::EXPLICIT);
   EXPECT_EQ(merged->enum_type(), FeatureSet::OPEN);
   EXPECT_EQ(merged->repeated_field_encoding(), FeatureSet::PACKED);
-  EXPECT_EQ(merged->string_field_validation(), FeatureSet::MANDATORY);
   EXPECT_EQ(merged->message_encoding(), FeatureSet::LENGTH_PREFIXED);
+  EXPECT_FALSE(merged->HasExtension(pb::test));
 
-  const pb::TestFeatures& ext = merged->GetExtension(pb::test);
+  const pb::TestFeatures& ext =
+      merged->GetExtension(pb::TestMessage::Nested::test_nested);
   EXPECT_EQ(ext.int_file_feature(), 1);
   EXPECT_EQ(ext.int_extension_range_feature(), 1);
   EXPECT_EQ(ext.int_message_feature(), 1);
@@ -207,45 +227,67 @@ TEST(FeatureResolverTest, DefaultsTestNestedExtension) {
   EXPECT_EQ(ext.enum_field_feature(), pb::TestFeatures::ENUM_VALUE1);
 }
 
+TEST(FeatureResolverTest, DefaultsGeneratedPoolCustom) {
+  DescriptorPool pool;
+  ASSERT_NE(
+      pool.BuildFile(GetProto(google::protobuf::DescriptorProto::descriptor()->file())),
+      nullptr);
+  ASSERT_NE(pool.BuildFile(GetProto(pb::TestFeatures::descriptor()->file())),
+            nullptr);
+  absl::StatusOr<FeatureSetDefaults> defaults =
+      FeatureResolver::CompileDefaults(
+          pool.FindMessageTypeByName("google.protobuf.FeatureSet"),
+          {pool.FindExtensionByName("pb.test")}, EDITION_2023, EDITION_2023);
+  ASSERT_OK(defaults);
+  ASSERT_EQ(defaults->defaults().size(), 1);
+  ASSERT_EQ(defaults->defaults().at(0).edition_enum(), EDITION_2023);
+  FeatureSet merged = defaults->defaults().at(0).features();
+
+  EXPECT_EQ(merged.field_presence(), FeatureSet::EXPLICIT);
+  EXPECT_TRUE(merged.HasExtension(pb::test));
+  EXPECT_EQ(merged.GetExtension(pb::test).int_file_feature(), 1);
+  EXPECT_FALSE(merged.HasExtension(pb::cpp));
+}
+
 TEST(FeatureResolverTest, DefaultsTooEarly) {
-  absl::StatusOr<FeatureSet> merged = GetDefaults("2022", pb::test);
+  absl::StatusOr<FeatureSetDefaults> defaults =
+      FeatureResolver::CompileDefaults(FeatureSet::descriptor(),
+                                       {GetExtension(pb::test)}, EDITION_2023,
+                                       EDITION_2023);
+  ASSERT_OK(defaults);
+  defaults->set_minimum_edition_enum(EDITION_1_TEST_ONLY);
+  absl::StatusOr<FeatureSet> merged =
+      GetDefaults(EDITION_1_TEST_ONLY, *defaults);
   EXPECT_THAT(merged, HasError(AllOf(HasSubstr("No valid default found"),
-                                     HasSubstr("2022"))));
+                                     HasSubstr("1_TEST_ONLY"))));
 }
 
 TEST(FeatureResolverTest, DefaultsFarFuture) {
-  absl::StatusOr<FeatureSet> merged = GetDefaults("3456", pb::test);
-  ASSERT_OK(merged);
-
-  pb::TestFeatures ext = merged->GetExtension(pb::test);
-  EXPECT_EQ(ext.int_file_feature(), 5);
-  EXPECT_THAT(ext.message_field_feature(),
-              EqualsProto("bool_field: true int_field: 4  float_field: 1.5 "
-                          "string_field: '2025'"));
-  EXPECT_EQ(ext.enum_field_feature(), pb::TestFeatures::ENUM_VALUE5);
-}
-
-TEST(FeatureResolverTest, DefaultsMiddleEdition) {
-  absl::StatusOr<FeatureSet> merged = GetDefaults("2024.1", pb::test);
-  ASSERT_OK(merged);
-
-  pb::TestFeatures ext = merged->GetExtension(pb::test);
-  EXPECT_EQ(ext.int_file_feature(), 4);
-  EXPECT_EQ(ext.enum_field_feature(), pb::TestFeatures::ENUM_VALUE4);
-}
-
-TEST(FeatureResolverTest, DefaultsDifferentDigitCount) {
-  absl::StatusOr<FeatureSet> merged = GetDefaults("2023.90", pb::test);
+  absl::StatusOr<FeatureSet> merged =
+      GetDefaults(EDITION_99999_TEST_ONLY, pb::test);
   ASSERT_OK(merged);
 
   pb::TestFeatures ext = merged->GetExtension(pb::test);
   EXPECT_EQ(ext.int_file_feature(), 3);
+  EXPECT_THAT(ext.message_field_feature(),
+              EqualsProto("bool_field: true int_field: 2  float_field: 1.5 "
+                          "string_field: '2024'"));
   EXPECT_EQ(ext.enum_field_feature(), pb::TestFeatures::ENUM_VALUE3);
+}
+
+TEST(FeatureResolverTest, DefaultsMiddleEdition) {
+  absl::StatusOr<FeatureSet> merged =
+      GetDefaults(EDITION_99997_TEST_ONLY, pb::test);
+  ASSERT_OK(merged);
+
+  pb::TestFeatures ext = merged->GetExtension(pb::test);
+  EXPECT_EQ(ext.int_file_feature(), 2);
+  EXPECT_EQ(ext.enum_field_feature(), pb::TestFeatures::ENUM_VALUE2);
 }
 
 TEST(FeatureResolverTest, DefaultsMessageMerge) {
   {
-    absl::StatusOr<FeatureSet> merged = GetDefaults("2023", pb::test);
+    absl::StatusOr<FeatureSet> merged = GetDefaults(EDITION_2023, pb::test);
     ASSERT_OK(merged);
     pb::TestFeatures ext = merged->GetExtension(pb::test);
     EXPECT_THAT(ext.message_field_feature(),
@@ -255,7 +297,8 @@ TEST(FeatureResolverTest, DefaultsMessageMerge) {
                                  string_field: '2023')pb"));
   }
   {
-    absl::StatusOr<FeatureSet> merged = GetDefaults("2023.1", pb::test);
+    absl::StatusOr<FeatureSet> merged =
+        GetDefaults(EDITION_99997_TEST_ONLY, pb::test);
     ASSERT_OK(merged);
     pb::TestFeatures ext = merged->GetExtension(pb::test);
     EXPECT_THAT(ext.message_field_feature(),
@@ -265,7 +308,8 @@ TEST(FeatureResolverTest, DefaultsMessageMerge) {
                                  string_field: '2023')pb"));
   }
   {
-    absl::StatusOr<FeatureSet> merged = GetDefaults("2024", pb::test);
+    absl::StatusOr<FeatureSet> merged =
+        GetDefaults(EDITION_99998_TEST_ONLY, pb::test);
     ASSERT_OK(merged);
     pb::TestFeatures ext = merged->GetExtension(pb::test);
     EXPECT_THAT(ext.message_field_feature(),
@@ -276,30 +320,85 @@ TEST(FeatureResolverTest, DefaultsMessageMerge) {
   }
 }
 
-TEST(FeatureResolverTest, InitializePoolMissingDescriptor) {
-  DescriptorPool pool;
-  EXPECT_THAT(FeatureResolver::Create("2023", nullptr),
-              HasError(HasSubstr("find definition of google.protobuf.FeatureSet")));
+TEST(FeatureResolverTest, CreateFromUnsortedDefaults) {
+  FeatureSetDefaults defaults = ParseTextOrDie(R"pb(
+    minimum_edition_enum: EDITION_2_TEST_ONLY
+    maximum_edition_enum: EDITION_99997_TEST_ONLY
+    defaults {
+      edition_enum: EDITION_2_TEST_ONLY
+      features {}
+    }
+    defaults {
+      edition_enum: EDITION_99997_TEST_ONLY
+      features {}
+    }
+    defaults {
+      edition_enum: EDITION_2023
+      features {}
+    }
+  )pb");
+  EXPECT_THAT(FeatureResolver::Create(EDITION_2023, defaults),
+              HasError(AllOf(HasSubstr("not strictly increasing."),
+                             HasSubstr("Edition 99997_TEST_ONLY is greater "
+                                       "than or equal to edition 2023"))));
 }
 
-TEST(FeatureResolverTest, RegisterExtensionDifferentContainingType) {
-  auto resolver = FeatureResolver::Create("2023", FeatureSet::descriptor());
-  ASSERT_OK(resolver);
-
-  EXPECT_OK(resolver->RegisterExtensions(
-      GetExtensionFile(protobuf_unittest::file_opt1, FileOptions::descriptor())));
+TEST(FeatureResolverTest, CreateUnknownEdition) {
+  FeatureSetDefaults defaults = ParseTextOrDie(R"pb(
+    minimum_edition_enum: EDITION_UNKNOWN
+    maximum_edition_enum: EDITION_99999_TEST_ONLY
+    defaults {
+      edition_enum: EDITION_UNKNOWN
+      features {}
+    }
+  )pb");
+  EXPECT_THAT(FeatureResolver::Create(EDITION_2023, defaults),
+              HasError(HasSubstr("Invalid edition UNKNOWN")));
 }
 
-TEST(FeatureResolverTest, RegisterExtensionTwice) {
-  auto resolver = FeatureResolver::Create("2023", FeatureSet::descriptor());
-  ASSERT_OK(resolver);
+TEST(FeatureResolverTest, CreateMissingEdition) {
+  FeatureSetDefaults defaults = ParseTextOrDie(R"pb(
+    minimum_edition_enum: EDITION_UNKNOWN
+    maximum_edition_enum: EDITION_99999_TEST_ONLY
+    defaults { features {} }
+  )pb");
+  EXPECT_THAT(FeatureResolver::Create(EDITION_2023, defaults),
+              HasError(HasSubstr("Invalid edition UNKNOWN")));
+}
 
-  EXPECT_OK(resolver->RegisterExtensions(GetExtensionFile(pb::test)));
-  EXPECT_OK(resolver->RegisterExtensions(GetExtensionFile(pb::test)));
+TEST(FeatureResolverTest, CompileDefaultsMissingDescriptor) {
+  EXPECT_THAT(
+      FeatureResolver::CompileDefaults(nullptr, {}, EDITION_2023, EDITION_2023),
+      HasError(HasSubstr("find definition of google.protobuf.FeatureSet")));
+}
+
+TEST(FeatureResolverTest, CompileDefaultsMissingExtension) {
+  EXPECT_THAT(
+      FeatureResolver::CompileDefaults(FeatureSet::descriptor(), {nullptr},
+                                       EDITION_2023, EDITION_2023),
+      HasError(HasSubstr("Unknown extension")));
+}
+
+TEST(FeatureResolverTest, CompileDefaultsInvalidExtension) {
+  EXPECT_THAT(
+      FeatureResolver::CompileDefaults(
+          FeatureSet::descriptor(),
+          {GetExtension(protobuf_unittest::file_opt1, FileOptions::descriptor())},
+          EDITION_2023, EDITION_2023),
+      HasError(HasSubstr("is not an extension of")));
+}
+
+TEST(FeatureResolverTest, CompileDefaultsMinimumLaterThanMaximum) {
+  EXPECT_THAT(
+      FeatureResolver::CompileDefaults(FeatureSet::descriptor(), {},
+                                       EDITION_99999_TEST_ONLY, EDITION_2023),
+      HasError(AllOf(HasSubstr("Invalid edition range"),
+                     HasSubstr("99999_TEST_ONLY is newer"),
+                     HasSubstr("2023"))));
 }
 
 TEST(FeatureResolverTest, MergeFeaturesChildOverrideCore) {
-  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver("2023");
+  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver(EDITION_2023);
   ASSERT_OK(resolver);
   FeatureSet child = ParseTextOrDie(R"pb(
     field_presence: IMPLICIT
@@ -312,13 +411,12 @@ TEST(FeatureResolverTest, MergeFeaturesChildOverrideCore) {
   EXPECT_EQ(merged->field_presence(), FeatureSet::IMPLICIT);
   EXPECT_EQ(merged->enum_type(), FeatureSet::OPEN);
   EXPECT_EQ(merged->repeated_field_encoding(), FeatureSet::EXPANDED);
-  EXPECT_EQ(merged->string_field_validation(), FeatureSet::MANDATORY);
   EXPECT_EQ(merged->message_encoding(), FeatureSet::LENGTH_PREFIXED);
 }
 
 TEST(FeatureResolverTest, MergeFeaturesChildOverrideComplex) {
   absl::StatusOr<FeatureResolver> resolver =
-      SetupFeatureResolver("2023", pb::test);
+      SetupFeatureResolver(EDITION_2023, pb::test);
   ASSERT_OK(resolver);
   FeatureSet child = ParseTextOrDie(R"pb(
     field_presence: IMPLICIT
@@ -336,7 +434,6 @@ TEST(FeatureResolverTest, MergeFeaturesChildOverrideComplex) {
   EXPECT_EQ(merged->field_presence(), FeatureSet::IMPLICIT);
   EXPECT_EQ(merged->enum_type(), FeatureSet::OPEN);
   EXPECT_EQ(merged->repeated_field_encoding(), FeatureSet::EXPANDED);
-  EXPECT_EQ(merged->string_field_validation(), FeatureSet::MANDATORY);
   EXPECT_EQ(merged->message_encoding(), FeatureSet::LENGTH_PREFIXED);
 
   pb::TestFeatures ext = merged->GetExtension(pb::test);
@@ -351,7 +448,7 @@ TEST(FeatureResolverTest, MergeFeaturesChildOverrideComplex) {
 
 TEST(FeatureResolverTest, MergeFeaturesParentOverrides) {
   absl::StatusOr<FeatureResolver> resolver =
-      SetupFeatureResolver("2023", pb::test);
+      SetupFeatureResolver(EDITION_2023, pb::test);
   ASSERT_OK(resolver);
   FeatureSet parent = ParseTextOrDie(R"pb(
     field_presence: IMPLICIT
@@ -363,7 +460,6 @@ TEST(FeatureResolverTest, MergeFeaturesParentOverrides) {
     }
   )pb");
   FeatureSet child = ParseTextOrDie(R"pb(
-    string_field_validation: NONE
     repeated_field_encoding: PACKED
     [pb.test] {
       int_field_feature: 9
@@ -376,7 +472,6 @@ TEST(FeatureResolverTest, MergeFeaturesParentOverrides) {
   EXPECT_EQ(merged->field_presence(), FeatureSet::IMPLICIT);
   EXPECT_EQ(merged->enum_type(), FeatureSet::OPEN);
   EXPECT_EQ(merged->repeated_field_encoding(), FeatureSet::PACKED);
-  EXPECT_EQ(merged->string_field_validation(), FeatureSet::NONE);
   EXPECT_EQ(merged->message_encoding(), FeatureSet::LENGTH_PREFIXED);
 
   pb::TestFeatures ext = merged->GetExtension(pb::test);
@@ -398,7 +493,7 @@ TEST(FeatureResolverTest, MergeFeaturesParentOverrides) {
 }
 
 TEST(FeatureResolverTest, MergeFeaturesFieldPresenceUnknown) {
-  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver("2023");
+  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver(EDITION_2023);
   ASSERT_OK(resolver);
   FeatureSet child = ParseTextOrDie(R"pb(
     field_presence: FIELD_PRESENCE_UNKNOWN
@@ -410,7 +505,7 @@ TEST(FeatureResolverTest, MergeFeaturesFieldPresenceUnknown) {
 }
 
 TEST(FeatureResolverTest, MergeFeaturesEnumTypeUnknown) {
-  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver("2023");
+  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver(EDITION_2023);
   ASSERT_OK(resolver);
   FeatureSet child = ParseTextOrDie(R"pb(
     enum_type: ENUM_TYPE_UNKNOWN
@@ -421,7 +516,7 @@ TEST(FeatureResolverTest, MergeFeaturesEnumTypeUnknown) {
 }
 
 TEST(FeatureResolverTest, MergeFeaturesRepeatedFieldEncodingUnknown) {
-  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver("2023");
+  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver(EDITION_2023);
   ASSERT_OK(resolver);
   FeatureSet child = ParseTextOrDie(R"pb(
     repeated_field_encoding: REPEATED_FIELD_ENCODING_UNKNOWN
@@ -432,20 +527,8 @@ TEST(FeatureResolverTest, MergeFeaturesRepeatedFieldEncodingUnknown) {
                   HasSubstr("REPEATED_FIELD_ENCODING_UNKNOWN"))));
 }
 
-TEST(FeatureResolverTest, MergeFeaturesStringFieldValidationUnknown) {
-  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver("2023");
-  ASSERT_OK(resolver);
-  FeatureSet child = ParseTextOrDie(R"pb(
-    string_field_validation: STRING_FIELD_VALIDATION_UNKNOWN
-  )pb");
-  EXPECT_THAT(resolver->MergeFeatures(FeatureSet(), child),
-              HasError(AllOf(
-                  HasSubstr("field google.protobuf.FeatureSet.string_field_validation"),
-                  HasSubstr("STRING_FIELD_VALIDATION_UNKNOWN"))));
-}
-
 TEST(FeatureResolverTest, MergeFeaturesMessageEncodingUnknown) {
-  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver("2023");
+  absl::StatusOr<FeatureResolver> resolver = SetupFeatureResolver(EDITION_2023);
   ASSERT_OK(resolver);
   FeatureSet child = ParseTextOrDie(R"pb(
     message_encoding: MESSAGE_ENCODING_UNKNOWN
@@ -458,7 +541,7 @@ TEST(FeatureResolverTest, MergeFeaturesMessageEncodingUnknown) {
 
 TEST(FeatureResolverTest, MergeFeaturesExtensionEnumUnknown) {
   absl::StatusOr<FeatureResolver> resolver =
-      SetupFeatureResolver("2023", pb::test);
+      SetupFeatureResolver(EDITION_2023, pb::test);
   ASSERT_OK(resolver);
   FeatureSet child = ParseTextOrDie(R"pb(
     [pb.test] { enum_field_feature: TEST_ENUM_FEATURE_UNKNOWN }
@@ -470,13 +553,18 @@ TEST(FeatureResolverTest, MergeFeaturesExtensionEnumUnknown) {
             pb::TestFeatures::TEST_ENUM_FEATURE_UNKNOWN);
 }
 
-// TODO(b/273611177) Move the following tests to descriptor_unittest.cc once
-// FeatureResolver is hooked up.  These will all fail during the descriptor
-// build, invalidating the test setup.
-//
-// Note: We should make sure to keep coverage over the custom DescriptorPool
-// cases.  These are the only tests covering issues there (the ones above use
-// the generated descriptor pool).
+TEST(FeatureResolverTest, MergeFeaturesDistantPast) {
+  EXPECT_THAT(SetupFeatureResolver(EDITION_1_TEST_ONLY),
+              HasError(AllOf(HasSubstr("Edition 1_TEST_ONLY"),
+                             HasSubstr("minimum supported edition 2023"))));
+}
+
+TEST(FeatureResolverTest, MergeFeaturesDistantFuture) {
+  EXPECT_THAT(
+      SetupFeatureResolver(EDITION_99998_TEST_ONLY),
+      HasError(AllOf(HasSubstr("Edition 99998_TEST_ONLY"),
+                     HasSubstr("maximum supported edition 99997_TEST_ONLY"))));
+}
 
 class FakeErrorCollector : public io::ErrorCollector {
  public:
@@ -496,6 +584,12 @@ class FeatureResolverPoolTest : public testing::Test {
     FileDescriptorProto file;
     FileDescriptorProto::GetDescriptor()->file()->CopyTo(&file);
     ASSERT_NE(pool_.BuildFile(file), nullptr);
+    feature_set_ = pool_.FindMessageTypeByName("google.protobuf.FeatureSet");
+    ASSERT_NE(feature_set_, nullptr);
+    auto defaults = FeatureResolver::CompileDefaults(
+        feature_set_, {}, EDITION_2023, EDITION_2023);
+    ASSERT_OK(defaults);
+    defaults_ = std::move(defaults).value();
   }
 
   const FileDescriptor* ParseSchema(absl::string_view schema) {
@@ -514,9 +608,11 @@ class FeatureResolverPoolTest : public testing::Test {
 
   DescriptorPool pool_;
   FileDescriptorProto file_proto_;
+  const Descriptor* feature_set_;
+  FeatureSetDefaults defaults_;
 };
 
-TEST_F(FeatureResolverPoolTest, RegisterExtensionNonMessage) {
+TEST_F(FeatureResolverPoolTest, CompileDefaultsInvalidNonMessage) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -529,16 +625,14 @@ TEST_F(FeatureResolverPoolTest, RegisterExtensionNonMessage) {
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2023", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
-  ASSERT_OK(resolver);
-
-  EXPECT_THAT(resolver->RegisterExtensions(*file),
+  const FieldDescriptor* ext = file->extension(0);
+  EXPECT_THAT(FeatureResolver::CompileDefaults(feature_set_, {ext},
+                                               EDITION_2023, EDITION_2023),
               HasError(AllOf(HasSubstr("test.bar"),
                              HasSubstr("is not of message type"))));
 }
 
-TEST_F(FeatureResolverPoolTest, RegisterExtensionRepeated) {
+TEST_F(FeatureResolverPoolTest, CompileDefaultsInvalidRepeated) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -551,16 +645,14 @@ TEST_F(FeatureResolverPoolTest, RegisterExtensionRepeated) {
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2023", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
-  ASSERT_OK(resolver);
-
+  const FieldDescriptor* ext = file->extension(0);
   EXPECT_THAT(
-      resolver->RegisterExtensions(*file),
+      FeatureResolver::CompileDefaults(feature_set_, {ext}, EDITION_2023,
+                                       EDITION_2023),
       HasError(AllOf(HasSubstr("test.bar"), HasSubstr("repeated extension"))));
 }
 
-TEST_F(FeatureResolverPoolTest, RegisterExtensionWithExtensions) {
+TEST_F(FeatureResolverPoolTest, CompileDefaultsInvalidWithExtensions) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -575,22 +667,20 @@ TEST_F(FeatureResolverPoolTest, RegisterExtensionWithExtensions) {
     extend Foo {
       optional Foo bar2 = 1 [
         targets = TARGET_TYPE_FIELD,
-        edition_defaults = { edition: "2023", value: "" }
+        edition_defaults = { edition_enum: EDITION_2023, value: "" }
       ];
     }
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2023", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
-  ASSERT_OK(resolver);
-
+  const FieldDescriptor* ext = file->extension(0);
   EXPECT_THAT(
-      resolver->RegisterExtensions(*file),
+      FeatureResolver::CompileDefaults(feature_set_, {ext}, EDITION_2023,
+                                       EDITION_2023),
       HasError(AllOf(HasSubstr("test.bar"), HasSubstr("Nested extensions"))));
 }
 
-TEST_F(FeatureResolverPoolTest, RegisterExtensionWithOneof) {
+TEST_F(FeatureResolverPoolTest, CompileDefaultsInvalidWithOneof) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -603,27 +693,25 @@ TEST_F(FeatureResolverPoolTest, RegisterExtensionWithOneof) {
       oneof x {
         int32 int_field = 1 [
           targets = TARGET_TYPE_FIELD,
-          edition_defaults = { edition: "2023", value: "1" }
+          edition_defaults = { edition_enum: EDITION_2023, value: "1" }
         ];
         string string_field = 2 [
           targets = TARGET_TYPE_FIELD,
-          edition_defaults = { edition: "2023", value: "'hello'" }
+          edition_defaults = { edition_enum: EDITION_2023, value: "'hello'" }
         ];
       }
     }
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2023", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
-  ASSERT_OK(resolver);
-
-  EXPECT_THAT(resolver->RegisterExtensions(*file),
+  const FieldDescriptor* ext = file->extension(0);
+  EXPECT_THAT(FeatureResolver::CompileDefaults(feature_set_, {ext},
+                                               EDITION_2023, EDITION_2023),
               HasError(AllOf(HasSubstr("test.Foo"),
                              HasSubstr("oneof feature fields"))));
 }
 
-TEST_F(FeatureResolverPoolTest, RegisterExtensionWithRequired) {
+TEST_F(FeatureResolverPoolTest, CompileDefaultsInvalidWithRequired) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -635,22 +723,20 @@ TEST_F(FeatureResolverPoolTest, RegisterExtensionWithRequired) {
     message Foo {
       required int32 required_field = 1 [
         targets = TARGET_TYPE_FIELD,
-        edition_defaults = { edition: "2023", value: "" }
+        edition_defaults = { edition_enum: EDITION_2023, value: "" }
       ];
     }
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2023", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
-  ASSERT_OK(resolver);
-
-  EXPECT_THAT(resolver->RegisterExtensions(*file),
+  const FieldDescriptor* ext = file->extension(0);
+  EXPECT_THAT(FeatureResolver::CompileDefaults(feature_set_, {ext},
+                                               EDITION_2023, EDITION_2023),
               HasError(AllOf(HasSubstr("test.Foo.required_field"),
                              HasSubstr("required field"))));
 }
 
-TEST_F(FeatureResolverPoolTest, RegisterExtensionWithRepeated) {
+TEST_F(FeatureResolverPoolTest, CompileDefaultsInvalidWithRepeated) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -662,22 +748,20 @@ TEST_F(FeatureResolverPoolTest, RegisterExtensionWithRepeated) {
     message Foo {
       repeated int32 repeated_field = 1 [
         targets = TARGET_TYPE_FIELD,
-        edition_defaults = { edition: "2023", value: "1" }
+        edition_defaults = { edition_enum: EDITION_2023, value: "1" }
       ];
     }
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2023", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
-  ASSERT_OK(resolver);
-
-  EXPECT_THAT(resolver->RegisterExtensions(*file),
+  const FieldDescriptor* ext = file->extension(0);
+  EXPECT_THAT(FeatureResolver::CompileDefaults(feature_set_, {ext},
+                                               EDITION_2023, EDITION_2023),
               HasError(AllOf(HasSubstr("test.Foo.repeated_field"),
                              HasSubstr("repeated field"))));
 }
 
-TEST_F(FeatureResolverPoolTest, RegisterExtensionWithMissingTarget) {
+TEST_F(FeatureResolverPoolTest, CompileDefaultsInvalidWithMissingTarget) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -688,22 +772,21 @@ TEST_F(FeatureResolverPoolTest, RegisterExtensionWithMissingTarget) {
     }
     message Foo {
       optional int32 int_field = 1 [
-        edition_defaults = { edition: "2023", value: "1" }
+        edition_defaults = { edition_enum: EDITION_2023, value: "1" }
       ];
     }
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2023", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
-  ASSERT_OK(resolver);
-
-  EXPECT_THAT(resolver->RegisterExtensions(*file),
+  const FieldDescriptor* ext = file->extension(0);
+  EXPECT_THAT(FeatureResolver::CompileDefaults(feature_set_, {ext},
+                                               EDITION_2023, EDITION_2023),
               HasError(AllOf(HasSubstr("test.Foo.int_field"),
                              HasSubstr("no target specified"))));
 }
 
-TEST_F(FeatureResolverPoolTest, RegisterExtensionDefaultsMessageParsingError) {
+TEST_F(FeatureResolverPoolTest,
+       CompileDefaultsInvalidDefaultsMessageParsingError) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -718,22 +801,21 @@ TEST_F(FeatureResolverPoolTest, RegisterExtensionDefaultsMessageParsingError) {
       }
       optional MessageFeature message_field_feature = 12 [
         targets = TARGET_TYPE_FIELD,
-        edition_defaults = { edition: "2023", value: "9987" }
+        edition_defaults = { edition_enum: EDITION_2023, value: "9987" }
       ];
     }
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2023", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
-  ASSERT_OK(resolver);
+  const FieldDescriptor* ext = file->extension(0);
   EXPECT_THAT(
-      resolver->RegisterExtensions(*file),
+      FeatureResolver::CompileDefaults(feature_set_, {ext}, EDITION_2023,
+                                       EDITION_2023),
       HasError(AllOf(HasSubstr("in edition_defaults"), HasSubstr("9987"))));
 }
 
 TEST_F(FeatureResolverPoolTest,
-       RegisterExtensionDefaultsMessageParsingErrorMerged) {
+       CompileDefaultsInvalidDefaultsMessageParsingErrorMerged) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -748,24 +830,23 @@ TEST_F(FeatureResolverPoolTest,
       }
       optional MessageFeature message_field_feature = 12 [
         targets = TARGET_TYPE_FIELD,
-        edition_defaults = { edition: "2025", value: "int_field: 2" },
-        edition_defaults = { edition: "2024", value: "int_field: 1" },
-        edition_defaults = { edition: "2023", value: "9987" }
+        edition_defaults = { edition_enum: EDITION_99998_TEST_ONLY, value: "int_field: 2" },
+        edition_defaults = { edition_enum: EDITION_99997_TEST_ONLY, value: "int_field: 1" },
+        edition_defaults = { edition_enum: EDITION_2023, value: "9987" }
       ];
     }
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2024", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
-  ASSERT_OK(resolver);
+  const FieldDescriptor* ext = file->extension(0);
   EXPECT_THAT(
-      resolver->RegisterExtensions(*file),
+      FeatureResolver::CompileDefaults(feature_set_, {ext}, EDITION_2023,
+                                       EDITION_99998_TEST_ONLY),
       HasError(AllOf(HasSubstr("in edition_defaults"), HasSubstr("9987"))));
 }
 
 TEST_F(FeatureResolverPoolTest,
-       RegisterExtensionDefaultsMessageParsingErrorSkipped) {
+       CompileDefaultsInvalidDefaultsMessageParsingErrorSkipped) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -780,23 +861,27 @@ TEST_F(FeatureResolverPoolTest,
       }
       optional MessageFeature message_field_feature = 12 [
         targets = TARGET_TYPE_FIELD,
-        edition_defaults = { edition: "2024", value: "int_field: 2" },
-        edition_defaults = { edition: "2023", value: "int_field: 1" },
-        edition_defaults = { edition: "2025", value: "9987" }
+        edition_defaults = { edition_enum: EDITION_99997_TEST_ONLY, value: "int_field: 2" },
+        edition_defaults = { edition_enum: EDITION_2023, value: "int_field: 1" },
+        edition_defaults = { edition_enum: EDITION_99998_TEST_ONLY, value: "9987" }
       ];
     }
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2024", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
+  const FieldDescriptor* ext = file->extension(0);
+  auto defaults = FeatureResolver::CompileDefaults(
+      feature_set_, {ext}, EDITION_2023, EDITION_99997_TEST_ONLY);
+  ASSERT_OK(defaults);
+
+  auto resolver = FeatureResolver::Create(EDITION_2023, *defaults);
   ASSERT_OK(resolver);
-  EXPECT_OK(resolver->RegisterExtensions(*file));
   FeatureSet parent, child;
   EXPECT_OK(resolver->MergeFeatures(parent, child));
 }
 
-TEST_F(FeatureResolverPoolTest, RegisterExtensionDefaultsScalarParsingError) {
+TEST_F(FeatureResolverPoolTest,
+       CompileDefaultsInvalidDefaultsScalarParsingError) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -808,22 +893,21 @@ TEST_F(FeatureResolverPoolTest, RegisterExtensionDefaultsScalarParsingError) {
     message Foo {
       optional int32 int_field_feature = 12 [
         targets = TARGET_TYPE_FIELD,
-        edition_defaults = { edition: "2023", value: "1.23" }
+        edition_defaults = { edition_enum: EDITION_2023, value: "1.23" }
       ];
     }
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2023", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
-  ASSERT_OK(resolver);
+  const FieldDescriptor* ext = file->extension(0);
   EXPECT_THAT(
-      resolver->RegisterExtensions(*file),
+      FeatureResolver::CompileDefaults(feature_set_, {ext}, EDITION_2023,
+                                       EDITION_2023),
       HasError(AllOf(HasSubstr("in edition_defaults"), HasSubstr("1.23"))));
 }
 
 TEST_F(FeatureResolverPoolTest,
-       RegisterExtensionDefaultsScalarParsingErrorSkipped) {
+       CompileDefaultsInvalidDefaultsScalarParsingErrorSkipped) {
   const FileDescriptor* file = ParseSchema(R"schema(
     syntax = "proto2";
     package test;
@@ -835,19 +919,124 @@ TEST_F(FeatureResolverPoolTest,
     message Foo {
       optional int32 int_field_feature = 12 [
         targets = TARGET_TYPE_FIELD,
-        edition_defaults = { edition: "2024", value: "1.5" },
-        edition_defaults = { edition: "2023", value: "1" }
+        edition_defaults = { edition_enum: EDITION_99997_TEST_ONLY, value: "1.5" },
+        edition_defaults = { edition_enum: EDITION_2023, value: "1" }
       ];
     }
   )schema");
   ASSERT_NE(file, nullptr);
 
-  auto resolver = FeatureResolver::Create(
-      "2023", pool_.FindMessageTypeByName("google.protobuf.FeatureSet"));
+  const FieldDescriptor* ext = file->extension(0);
+  auto defaults = FeatureResolver::CompileDefaults(feature_set_, {ext},
+                                                   EDITION_2023, EDITION_2023);
+  ASSERT_OK(defaults);
+
+  auto resolver = FeatureResolver::Create(EDITION_2023, *defaults);
   ASSERT_OK(resolver);
-  EXPECT_OK(resolver->RegisterExtensions(*file));
   FeatureSet parent, child;
   EXPECT_OK(resolver->MergeFeatures(parent, child));
+}
+
+TEST_F(FeatureResolverPoolTest, CompileDefaultsInvalidDefaultsTooEarly) {
+  const FileDescriptor* file = ParseSchema(R"schema(
+    syntax = "proto2";
+    package test;
+    import "google/protobuf/descriptor.proto";
+
+    extend google.protobuf.FeatureSet {
+      optional Foo bar = 9999;
+    }
+    message Foo {
+      optional int32 int_field_feature = 12 [
+        targets = TARGET_TYPE_FIELD,
+        edition_defaults = { edition_enum: EDITION_2_TEST_ONLY, value: "1" }
+      ];
+    }
+  )schema");
+  ASSERT_NE(file, nullptr);
+
+  const FieldDescriptor* ext = file->extension(0);
+  EXPECT_THAT(
+      FeatureResolver::CompileDefaults(feature_set_, {ext}, EDITION_2023,
+                                       EDITION_2023),
+      HasError(HasSubstr("No valid default found for edition 2_TEST_ONLY")));
+}
+
+TEST_F(FeatureResolverPoolTest, CompileDefaultsMinimumTooEarly) {
+  const FileDescriptor* file = ParseSchema(R"schema(
+    syntax = "proto2";
+    package test;
+    import "google/protobuf/descriptor.proto";
+
+    extend google.protobuf.FeatureSet {
+      optional Foo bar = 9999;
+    }
+    message Foo {
+      optional int32 int_field_feature = 12 [
+        targets = TARGET_TYPE_FIELD,
+        edition_defaults = { edition_enum: EDITION_2023, value: "1" }
+      ];
+    }
+  )schema");
+  ASSERT_NE(file, nullptr);
+
+  const FieldDescriptor* ext = file->extension(0);
+  EXPECT_THAT(
+      FeatureResolver::CompileDefaults(feature_set_, {ext}, EDITION_1_TEST_ONLY,
+                                       EDITION_99997_TEST_ONLY),
+      HasError(HasSubstr("No valid default found for edition 1_TEST_ONLY")));
+}
+
+TEST_F(FeatureResolverPoolTest, CompileDefaultsMinimumCovered) {
+  const FileDescriptor* file = ParseSchema(R"schema(
+    syntax = "proto2";
+    package test;
+    import "google/protobuf/descriptor.proto";
+
+    extend google.protobuf.FeatureSet {
+      optional Foo bar = 9999;
+    }
+    message Foo {
+      optional int32 int_file_feature = 1 [
+        targets = TARGET_TYPE_FIELD,
+        edition_defaults = { edition_enum: EDITION_99998_TEST_ONLY, value: "2" },
+        edition_defaults = { edition_enum: EDITION_2023, value: "1" }
+      ];
+    }
+  )schema");
+  ASSERT_NE(file, nullptr);
+
+  const FieldDescriptor* ext = file->extension(0);
+  auto defaults = FeatureResolver::CompileDefaults(
+      feature_set_, {ext}, EDITION_99997_TEST_ONLY, EDITION_99999_TEST_ONLY);
+  ASSERT_OK(defaults);
+
+  EXPECT_THAT(*defaults, EqualsProto(R"pb(
+    minimum_edition_enum: EDITION_99997_TEST_ONLY
+    maximum_edition_enum: EDITION_99999_TEST_ONLY
+    defaults {
+      edition_enum: EDITION_2023
+      features {
+        field_presence: EXPLICIT
+        enum_type: OPEN
+        repeated_field_encoding: PACKED
+        message_encoding: LENGTH_PREFIXED
+        json_format: ALLOW
+        [pb.test] { int_file_feature: 1 }
+      }
+    }
+    defaults {
+      edition_enum: EDITION_99998_TEST_ONLY
+      features {
+        field_presence: EXPLICIT
+        enum_type: OPEN
+        repeated_field_encoding: PACKED
+        message_encoding: LENGTH_PREFIXED
+        json_format: ALLOW
+        [pb.test] { int_file_feature: 2 }
+      }
+    }
+  )pb"));
 }
 
 }  // namespace

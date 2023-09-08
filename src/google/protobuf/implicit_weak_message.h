@@ -112,10 +112,6 @@ class PROTOBUF_EXPORT ImplicitWeakMessage : public MessageLite {
                             target);
   }
 
-  int GetCachedSize() const override {
-    return data_ == nullptr ? 0 : static_cast<int>(data_->size());
-  }
-
   typedef void InternalArenaConstructable_;
 
  private:
@@ -198,13 +194,13 @@ struct WeakRepeatedPtrField {
     return pointer_iterator(base().raw_mutable_data());
   }
   const_pointer_iterator pointer_begin() const {
-    return const_pointer_iterator(base().raw_mutable_data());
+    return const_pointer_iterator(base().raw_data());
   }
   pointer_iterator pointer_end() {
     return pointer_iterator(base().raw_mutable_data() + base().size());
   }
   const_pointer_iterator pointer_end() const {
-    return const_pointer_iterator(base().raw_mutable_data() + base().size());
+    return const_pointer_iterator(base().raw_data() + base().size());
   }
 
   MessageLite* AddWeak(const MessageLite* prototype) {
@@ -215,7 +211,7 @@ struct WeakRepeatedPtrField {
   void MergeFrom(const WeakRepeatedPtrField& other) {
     base().template MergeFrom<TypeHandler>(other.base());
   }
-  void InternalSwap(WeakRepeatedPtrField* other) {
+  void InternalSwap(WeakRepeatedPtrField* PROTOBUF_RESTRICT other) {
     base().InternalSwap(&other->base());
   }
 

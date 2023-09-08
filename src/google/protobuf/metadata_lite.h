@@ -35,7 +35,6 @@
 
 #include "google/protobuf/arena.h"
 #include "google/protobuf/port.h"
-#include "google/protobuf/port.h"
 
 // Must be included last.
 #include "google/protobuf/port_def.inc"
@@ -134,7 +133,8 @@ class PROTOBUF_EXPORT InternalMetadata {
     }
   }
 
-  PROTOBUF_NDEBUG_INLINE void InternalSwap(InternalMetadata* other) {
+  PROTOBUF_NDEBUG_INLINE void InternalSwap(
+      InternalMetadata* PROTOBUF_RESTRICT other) {
     std::swap(ptr_, other->ptr_);
   }
 
@@ -182,11 +182,10 @@ class PROTOBUF_EXPORT InternalMetadata {
 
   template <typename T>
   PROTOBUF_NOINLINE void DeleteOutOfLineHelper() {
-    // TODO(b/188560391): Determine if this branch is needed.
-    if (!arena()) {
-      delete PtrValue<Container<T>>();
-      ptr_ = 0;
-    }
+    delete PtrValue<Container<T>>();
+    // TODO(b/188560391):  This store is load-bearing.  Since we are destructing
+    // the message at this point, see if we can eliminate it.
+    ptr_ = 0;
   }
 
   template <typename T>

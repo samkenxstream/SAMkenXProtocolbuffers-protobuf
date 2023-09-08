@@ -67,7 +67,7 @@ message NestedMessage {
 message ResponseMessage {
 }
 
-service Service {
+service DescriptorTestService {
   rpc CallMethod(.protobuf_unittest.NestedMessage) returns (.protobuf_unittest.ResponseMessage);
 }
 
@@ -97,8 +97,7 @@ class DescriptorTest(unittest.TestCase):
     enum_proto.value.add(name='FOREIGN_BAZ', number=6)
 
     file_proto.message_type.add(name='ResponseMessage')
-    service_proto = file_proto.service.add(
-        name='Service')
+    service_proto = file_proto.service.add(name='DescriptorTestService')
     method_proto = service_proto.method.add(
         name='CallMethod',
         input_type='.protobuf_unittest.NestedMessage',
@@ -554,6 +553,7 @@ class DescriptorTest(unittest.TestCase):
     self.assertEqual(self.my_file.package, 'protobuf_unittest')
     self.assertEqual(self.my_file.pool, self.pool)
     self.assertFalse(self.my_file.has_options)
+    self.assertEqual(self.my_file.syntax, 'proto2')
     file_proto = descriptor_pb2.FileDescriptorProto()
     self.my_file.CopyToProto(file_proto)
     self.assertEqual(self.my_file.serialized_pb,
@@ -811,6 +811,15 @@ class GeneratedDescriptorTest(unittest.TestCase):
                      oneof_descriptor.full_name)
     self.assertEqual(0, oneof_descriptor.index)
 
+  def testDescriptorSlice(self):
+    message_descriptor = unittest_pb2.TestAllTypes.DESCRIPTOR
+    nested = message_descriptor.nested_types[:]
+    self.assertEqual(message_descriptor.nested_types, nested)
+    fields = message_descriptor.fields
+    fields_list = list(fields)
+    self.assertEqual(fields_list[:], fields[:])
+    self.assertEqual(fields_list[2::2], fields[2::2])
+    self.assertEqual(fields_list[3:19:3], fields[3:19:3])
 
 class DescriptorCopyToProtoTest(unittest.TestCase):
   """Tests for CopyTo functions of Descriptor."""
@@ -1133,8 +1142,12 @@ class MakeDescriptorTest(unittest.TestCase):
     result = descriptor.MakeDescriptor(message_type)
     self.assertEqual(result.fields[0].cpp_type,
                      descriptor.FieldDescriptor.CPPTYPE_UINT64)
+    self.assertEqual(result.fields[0].cpp_type,
+                     result.fields[0].CPPTYPE_UINT64)
     self.assertEqual(result.fields[1].cpp_type,
                      descriptor.FieldDescriptor.CPPTYPE_MESSAGE)
+    self.assertEqual(result.fields[1].cpp_type,
+                     result.fields[1].CPPTYPE_MESSAGE)
     self.assertEqual(result.fields[1].message_type.containing_type,
                      result)
     self.assertEqual(result.nested_types[0].fields[0].full_name,

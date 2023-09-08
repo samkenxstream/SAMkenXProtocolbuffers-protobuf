@@ -51,7 +51,6 @@
 #include "absl/log/absl_check.h"
 #include "google/protobuf/internal_visibility.h"
 #include "google/protobuf/port.h"
-#include "google/protobuf/port.h"
 #include "google/protobuf/io/coded_stream.h"
 #include "google/protobuf/parse_context.h"
 #include "google/protobuf/repeated_field.h"
@@ -77,21 +76,16 @@ class Message;          // message.h
 class MessageFactory;   // message.h
 class Reflection;       // message.h
 class UnknownFieldSet;  // unknown_field_set.h
-#ifdef PROTOBUF_FUTURE_EDITIONS
 class FeatureSet;
-#endif  // PROTOBUF_FUTURE_EDITIONS
 namespace internal {
 class FieldSkipper;  // wire_format_lite.h
 class WireFormat;
-enum class LazyVerifyOption;
 }  // namespace internal
 }  // namespace protobuf
 }  // namespace google
-#ifdef PROTOBUF_FUTURE_EDITIONS
 namespace pb {
 class CppFeatures;
 }  // namespace pb
-#endif  // PROTOBUF_FUTURE_EDITIONS
 
 namespace google {
 namespace protobuf {
@@ -598,8 +592,8 @@ class PROTOBUF_EXPORT ExtensionSet {
     virtual void Clear() = 0;
 
     virtual const char* _InternalParse(const MessageLite& prototype,
-                                       Arena* arena, LazyVerifyOption option,
-                                       const char* ptr, ParseContext* ctx) = 0;
+                                       Arena* arena, const char* ptr,
+                                       ParseContext* ctx) = 0;
     virtual uint8_t* WriteMessageToArray(
         const MessageLite* prototype, int number, uint8_t* target,
         io::EpsCopyOutputStream* stream) const = 0;
@@ -1554,13 +1548,15 @@ class ExtensionIdentifier {
 extern PROTOBUF_ATTRIBUTE_WEAK ExtensionSet::LazyMessageExtension*
 MaybeCreateLazyExtension(Arena* arena);
 
-#ifdef PROTOBUF_FUTURE_EDITIONS
 // Define a specialization of ExtensionIdentifier for bootstrapped extensions
 // that we need to register lazily.
 template <>
 class ExtensionIdentifier<FeatureSet, MessageTypeTraits<::pb::CppFeatures>, 11,
                           false> {
  public:
+  using TypeTraits = MessageTypeTraits<::pb::CppFeatures>;
+  using Extendee = FeatureSet;
+
   explicit constexpr ExtensionIdentifier(int number) : number_(number) {}
 
   int number() const { return number_; }
@@ -1586,7 +1582,6 @@ class ExtensionIdentifier<FeatureSet, MessageTypeTraits<::pb::CppFeatures>, 11,
   mutable absl::once_flag once_;
 };
 
-#endif  // PROTOBUF_FUTURE_EDITIONS
 
 }  // namespace internal
 
@@ -1618,6 +1613,21 @@ void LinkExtensionReflection(
     const google::protobuf::internal::ExtensionIdentifier<
         ExtendeeType, TypeTraitsType, field_type, is_packed>& extension) {
   internal::StrongReference(extension);
+}
+
+// Returns the field descriptor for a generated extension identifier.  This is
+// useful when doing reflection over generated extensions.
+template <typename ExtendeeType, typename TypeTraitsType,
+          internal::FieldType field_type, bool is_packed,
+          typename PoolType = DescriptorPool>
+const FieldDescriptor* GetExtensionReflection(
+    const google::protobuf::internal::ExtensionIdentifier<
+        ExtendeeType, TypeTraitsType, field_type, is_packed>& extension) {
+  return PoolType::generated_pool()->FindExtensionByNumber(
+      google::protobuf::internal::ExtensionIdentifier<ExtendeeType, TypeTraitsType,
+                                            field_type,
+                                            is_packed>::Extendee::descriptor(),
+      extension.number());
 }
 
 }  // namespace protobuf

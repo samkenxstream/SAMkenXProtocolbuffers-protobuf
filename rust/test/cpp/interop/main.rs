@@ -28,7 +28,8 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use std::ptr::NonNull;
+use protobuf_cpp::__internal::PtrAndLen;
+use protobuf_cpp::__internal::RawMessage;
 use unittest_proto::proto2_unittest::TestAllExtensions;
 use unittest_proto::proto2_unittest::TestAllTypes;
 
@@ -46,12 +47,12 @@ macro_rules! proto_assert_eq {
 // Helper functions invoking C++ Protobuf APIs directly in C++.
 // Defined in `test_utils.cc`.
 extern "C" {
-    fn DeserializeTestAllTypes(data: *const u8, len: usize) -> NonNull<u8>;
-    fn MutateTestAllTypes(msg: NonNull<u8>);
-    fn SerializeTestAllTypes(msg: NonNull<u8>) -> protobuf_cpp::__runtime::SerializedData;
+    fn DeserializeTestAllTypes(data: *const u8, len: usize) -> RawMessage;
+    fn MutateTestAllTypes(msg: RawMessage);
+    fn SerializeTestAllTypes(msg: RawMessage) -> protobuf_cpp::__runtime::SerializedData;
 
-    fn NewWithExtension() -> NonNull<u8>;
-    fn GetBytesExtension(msg: NonNull<u8>) -> protobuf_cpp::__internal::PtrAndLen;
+    fn NewWithExtension() -> RawMessage;
+    fn GetBytesExtension(msg: RawMessage) -> PtrAndLen;
 }
 
 #[test]
@@ -63,7 +64,7 @@ fn mutate_message_in_cpp() {
 
     let mut msg2 = TestAllTypes::new();
     msg2.optional_int64_set(Some(42));
-    msg2.optional_bytes_set(Some(b"something mysterious"));
+    msg2.optional_bytes_mut().set(b"something mysterious");
     msg2.optional_bool_set(Some(false));
 
     proto_assert_eq!(msg1, msg2);
@@ -73,7 +74,7 @@ fn mutate_message_in_cpp() {
 fn deserialize_in_rust() {
     let mut msg1 = TestAllTypes::new();
     msg1.optional_int64_set(Some(-1));
-    msg1.optional_bytes_set(Some(b"some cool data I guess"));
+    msg1.optional_bytes_mut().set(b"some cool data I guess");
     let serialized =
         unsafe { SerializeTestAllTypes(msg1.__unstable_cpp_repr_grant_permission_to_break()) };
 
@@ -86,7 +87,7 @@ fn deserialize_in_rust() {
 fn deserialize_in_cpp() {
     let mut msg1 = TestAllTypes::new();
     msg1.optional_int64_set(Some(-1));
-    msg1.optional_bytes_set(Some(b"some cool data I guess"));
+    msg1.optional_bytes_mut().set(b"some cool data I guess");
     let data = msg1.serialize();
 
     let msg2 = unsafe {

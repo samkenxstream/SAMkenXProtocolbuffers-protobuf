@@ -224,10 +224,6 @@ static_assert(PROTOBUF_CPLUSPLUS_MIN(201402L), "Protobuf only supports C++14 and
 static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
               "Protobuf only supports Abseil version 20230125.3 and newer.");
 
-// Enable editions infrastructure by default.  This should be a no-op without
-// the --experimental_editions protoc flag.
-#define PROTOBUF_FUTURE_EDITIONS 1
-
 // Future versions of protobuf will include breaking changes to some APIs.
 // This macro can be set to enable these API changes ahead of time, so that
 // user code can be updated before upgrading versions of protobuf.
@@ -250,27 +246,41 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 // Owner: mkruskal@
 #define PROTOBUF_FUTURE_EXTENSION_RANGE_CLASS 1
 
+// Used to lock down wrong ctype usages in proto file.
+// Owner: jieluo@
+#define PROTOBUF_FUTURE_REMOVE_WRONG_CTYPE 1
+
 #endif
 
 #ifdef PROTOBUF_VERSION
 #error PROTOBUF_VERSION was previously defined
 #endif
-#define PROTOBUF_VERSION 4023000
+#define PROTOBUF_VERSION 4024000
 
 #ifdef PROTOBUF_MIN_HEADER_VERSION_FOR_PROTOC
 #error PROTOBUF_MIN_HEADER_VERSION_FOR_PROTOC was previously defined
 #endif
-#define PROTOBUF_MIN_HEADER_VERSION_FOR_PROTOC 4023000
+#define PROTOBUF_MIN_HEADER_VERSION_FOR_PROTOC 4024000
 
 #ifdef PROTOBUF_MIN_PROTOC_VERSION
 #error PROTOBUF_MIN_PROTOC_VERSION was previously defined
 #endif
-#define PROTOBUF_MIN_PROTOC_VERSION 4023000
+#define PROTOBUF_MIN_PROTOC_VERSION 4024000
 
 #ifdef PROTOBUF_VERSION_SUFFIX
 #error PROTOBUF_VERSION_SUFFIX was previously defined
 #endif
 #define PROTOBUF_VERSION_SUFFIX ""
+
+#ifdef PROTOBUF_MINIMUM_EDITION
+#error PROTOBUF_MINIMUM_EDITION was previously defined
+#endif
+#define PROTOBUF_MINIMUM_EDITION EDITION_2023
+
+#ifdef PROTOBUF_MAXIMUM_EDITION
+#error PROTOBUF_MAXIMUM_EDITION was previously defined
+#endif
+#define PROTOBUF_MAXIMUM_EDITION EDITION_2023
 
 #ifdef PROTOBUF_ALWAYS_INLINE
 #error PROTOBUF_ALWAYS_INLINE was previously defined
@@ -338,12 +348,10 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
     !defined(_ARCH_PPC) && !defined(__wasm__) &&                      \
     !(defined(_MSC_VER) && defined(_M_IX86)) && !defined(__i386__) && \
     !(defined(__NDK_MAJOR__) && __NDK_MAJOR <= 24)
-#  ifndef PROTO2_OPENSOURCE
 // Compilation fails on ARM32: b/195943306
 // Compilation fails on powerpc64le: b/187985113
 // Compilation fails on X86 Windows:
 // https://github.com/llvm/llvm-project/issues/53271
-#  endif
 #define PROTOBUF_MUSTTAIL [[clang::musttail]]
 #define PROTOBUF_TAILCALL true
 #else
@@ -446,7 +454,7 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 
 // The minimum library version which works with the current version of the
 // headers.
-#define GOOGLE_PROTOBUF_MIN_LIBRARY_VERSION 4023000
+#define GOOGLE_PROTOBUF_MIN_LIBRARY_VERSION 4024000
 
 #ifdef PROTOBUF_RTTI
 #error PROTOBUF_RTTI was previously defined
@@ -598,6 +606,14 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 // have harder-to-rely-on address stability.
 #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
 #error PROTOBUF_FORCE_COPY_DEFAULT_STRING was previously defined
+#endif
+
+// Set (and leave set) PROTOBUF_EXPLICIT_CONSTRUCTORS
+// This flag changes the internal implementation class and its uses from using
+// aggregate initialization to using explicit constructor based initialization.
+// TODO(b/290029568): remove this flag and make the code permanent.
+#ifndef PROTOBUF_EXPLICIT_CONSTRUCTORS
+#define PROTOBUF_EXPLICIT_CONSTRUCTORS
 #endif
 
 #ifdef PROTOBUF_FORCE_ALLOCATION_ON_CONSTRUCTION
@@ -838,24 +854,25 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 #ifdef PROTOBUF_TSAN
 // TODO(b/285620714): it would be preferable to use __tsan_external_read/
 // __tsan_external_write, but they can cause dlopen issues.
-#define PROTOBUF_TSAN_READ(addr)                                               \
-  do {                                                                         \
-    volatile char protobuf_tsan_dummy = *reinterpret_cast<const char *>(addr); \
-    (void)protobuf_tsan_dummy;                                                 \
+#define PROTOBUF_TSAN_READ(addr)                                      \
+  do {                                                                \
+    char protobuf_tsan_dummy = *reinterpret_cast<const char *>(addr); \
+    asm volatile("" : "+r"(protobuf_tsan_dummy));                     \
   } while (0)
-#define PROTOBUF_TSAN_WRITE(addr)                          \
-  do {                                                     \
-    char protobuf_tsan_zero = 0;                           \
-    asm volatile("" : "+m"(protobuf_tsan_zero));           \
-    *reinterpret_cast<char *>(addr) += protobuf_tsan_zero; \
+// We currently use a dedicated member for TSan checking so the value of this
+// member is not important. We can unconditionally write to it without affecting
+// correctness of the rest of the class.
+#define PROTOBUF_TSAN_WRITE(addr)        \
+  do {                                   \
+    *reinterpret_cast<char *>(addr) = 0; \
   } while (0)
 #else  // PROTOBUF_TSAN
-#define PROTOBUF_TSAN_READ(addr)
-#define PROTOBUF_TSAN_WRITE(addr)
+#define PROTOBUF_TSAN_READ(addr) (void)0
+#define PROTOBUF_TSAN_WRITE(addr) (void)0
 #endif  // PROTOBUF_TSAN
 
 #ifdef PROTOBUF_TSAN
-#define PROTOBUF_TSAN_DECLARE_MEMBER ::uint32_t _tsan_detect_race = 0
+#define PROTOBUF_TSAN_DECLARE_MEMBER ::uint32_t _tsan_detect_race = 0;
 #else
 #define PROTOBUF_TSAN_DECLARE_MEMBER
 #endif
@@ -907,6 +924,20 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 #define PROTOBUF_UNUSED __attribute__((__unused__))
 #else
 #define PROTOBUF_UNUSED
+#endif
+
+// For the toolchains that support it, evalutes to `true` if the input is
+// determined to be a compile time constant after optimizations have happened
+// (like inlining and constant propagation). A `false` result means that the
+// compiler could not determine it is constant (it might still be but couldn't
+// figure it out).
+#ifdef PROTOBUF_BUILTIN_CONSTANT_P
+#error PROTOBUF_BUILTIN_CONSTANT_P was previously defined
+#endif
+#if __has_builtin(__builtin_constant_p)
+#define PROTOBUF_BUILTIN_CONSTANT_P(x) __builtin_constant_p(x)
+#else
+#define PROTOBUF_BUILTIN_CONSTANT_P(x) false
 #endif
 
 // ThreadSafeArenaz is turned off completely in opensource builds.
@@ -1091,6 +1122,8 @@ static_assert(PROTOBUF_ABSL_MIN(20230125, 3),
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
 // This causes spurious warnings in GCC 13.
 #pragma GCC diagnostic ignored "-Wself-move"
+// Ignore warning: extra ';' [-Wpedantic]
+#pragma GCC diagnostic ignored "-Wpedantic"
 #endif
 #if __GNUC__ == 12 && __GNUC_MINOR__ < 4
 // Wrong warning emitted when assigning a single char c-string to a std::string

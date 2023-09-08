@@ -9,6 +9,8 @@ package(
     default_visibility = ["//src/google/protobuf:__subpackages__"],
 )
 
+licenses(["notice"])
+
 # The current Rust Protobuf runtime for the build. Depending on the value of
 # `:rust_proto_library_kernel` build setting it forwards to the cpp or upb kernels. This is the
 # target that users are expected to depend on.
@@ -35,44 +37,48 @@ rust_library(
     }),
 )
 
+# This list contains kernel-agnostic logic and simple kernel-specific logic controlled by
+# `#[cfg(...)]` attributes. That forces us to compile these files twice, once for each kernel. As a
+# result these files are included in both `:protobuf_upb` and `:protobuf_cpp`. This is in principle
+# identical to how we compile regular Rust source files twice (once for production, and once for
+# unittesting).
+#
+# shared.rs is the root of the crate and has public items re-exported in protobuf.rs for user use.
+PROTOBUF_SHARED = [
+    "internal.rs",
+    "macros.rs",
+    "optional.rs",
+    "primitive.rs",
+    "proxied.rs",
+    "shared.rs",
+    "string.rs",
+    "vtable.rs",
+]
+
 # The Rust Protobuf runtime using the upb kernel.
 #
 # `rust_upb_proto_library` implicitly depends on this target. This target cannot depend on
 # `:rust_proto_library_kernel` build setting; it has to be fully functional under any value of that
 # setting.
-#
-# `shared.rs` contains kernel-agnostic logic and simple kernel-specific logic controlled by
-# `#[cfg(...)]` attributes. That forces us to compile this file twice, once for each kernel. As a
-# result this file is included in both `:protobuf_upb` and `:protobuf_cpp`. This is in principle
-# identical to how we compile regular Rust source files twice (once for production, and once for
-# unittesting).
 rust_library(
     name = "protobuf_upb",
-    srcs = [
-        "internal.rs",
-        "optional.rs",
-        "proxied.rs",
-        "shared.rs",
-        "string.rs",
-        "upb.rs",
-    ],
+    srcs = PROTOBUF_SHARED + ["upb.rs"],
     crate_root = "shared.rs",
     rustc_flags = ["--cfg=upb_kernel"],
     visibility = [
         "//src/google/protobuf:__subpackages__",
         "//rust:__subpackages__",
     ],
-    deps = ["//rust/upb_kernel:upb_c_api"],
+    deps = [
+        ":utf8",
+        "//rust/upb_kernel:upb_c_api",
+    ],
 )
 
 rust_test(
     name = "protobuf_upb_test",
     crate = ":protobuf_upb",
     rustc_flags = ["--cfg=upb_kernel"],
-    tags = [
-        # TODO(b/270274576): Enable testing on arm once we have a Rust Arm toolchain.
-        "not_build:arm",
-    ],
 )
 
 # The Rust Protobuf runtime using the cpp kernel.
@@ -80,34 +86,28 @@ rust_test(
 # `rust_cpp_proto_library` implicitly depends on this target. This target cannot depend on
 # `:rust_proto_library_kernel` build setting; it has to be fully functional under any value of that
 # setting.
-#
-# See the comment for `:protobuf_upb` for discussion of the `shared.rs` file.
 rust_library(
     name = "protobuf_cpp",
-    srcs = [
-        "cpp.rs",
-        "internal.rs",
-        "optional.rs",
-        "proxied.rs",
-        "shared.rs",
-        "string.rs",
-    ],
+    srcs = PROTOBUF_SHARED + ["cpp.rs"],
     crate_root = "shared.rs",
     rustc_flags = ["--cfg=cpp_kernel"],
     visibility = [
         "//src/google/protobuf:__subpackages__",
         "//rust:__subpackages__",
     ],
+    deps = [":utf8"],
 )
 
 rust_test(
     name = "protobuf_cpp_test",
     crate = ":protobuf_cpp",
     rustc_flags = ["--cfg=cpp_kernel"],
-    tags = [
-        # TODO(b/270274576): Enable testing on arm once we have a Rust Arm toolchain.
-        "not_build:arm",
-    ],
+)
+
+rust_library(
+    name = "utf8",
+    srcs = ["utf8.rs"],
+    visibility = ["//visibility:private"],
 )
 
 proto_lang_toolchain(

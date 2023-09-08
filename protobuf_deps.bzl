@@ -42,8 +42,8 @@ def protobuf_deps():
         _github_archive(
             name = "com_google_absl",
             repo = "https://github.com/abseil/abseil-cpp",
-            commit = "c2435f8342c2d0ed8101cb43adfd605fdc52dca2",  # Abseil LTS 20230125.3
-            sha256 = "ea1d31db00eb37e607bfda17ffac09064670ddf05da067944c4766f517876390",
+            commit = "29bf8085f3bf17b84d30e34b3d7ff8248fda404e",  # Abseil LTS 20230802
+            sha256 = "f4871f2982e29496f4ddd598ccd5a87fea42f23c49b5e5eb459d57eab91df9d9",
         )
 
     if not native.existing_rule("zlib"):
@@ -71,8 +71,8 @@ def protobuf_deps():
         _github_archive(
             name = "utf8_range",
             repo = "https://github.com/protocolbuffers/utf8_range",
-            commit = "de0b4a8ff9b5d4c98108bdfe723291a33c52c54f",
-            sha256 = "5da960e5e5d92394c809629a03af3c7709d2d3d0ca731dacb3a9fb4bf28f7702",
+            commit = "d863bc33e15cba6d873c878dcca9e6fe52b2f8cb",
+            sha256 = "568988b5f7261ca181468dba38849fabf59dd9200fb2ed4b2823da187ef84d8c",
         )
 
     if not native.existing_rule("rules_cc"):
@@ -102,16 +102,16 @@ def protobuf_deps():
         _github_archive(
             name = "rules_python",
             repo = "https://github.com/bazelbuild/rules_python",
-            commit = "912a5051f51581784fd64094f6bdabf93f6d698f",  # 0.14.0
-            sha256 = "a3e4b4ade7c4a52e757b16a16e94d0b2640333062180cba577d81fac087a501d",
+            commit = "02b521fce3c7b36b05813aa986d72777cc3ee328",  # 0.24.0
+            sha256 = "f9e4f6acf82449324d56669bda4bdb28b48688ad2990d8b39fa5b93ed39c9ad1",
         )
 
     if not native.existing_rule("rules_ruby"):
         _github_archive(
             name = "rules_ruby",
             repo = "https://github.com/protocolbuffers/rules_ruby",
-            commit = "5cf6ff74161d7f985b9bf86bb3c5fb16cef6337b",
-            sha256 = "c88dd69eb50fcfd7fbc5d7db79adc6631ef0e1d80b3c94efe33ac5ee3ccc37f7",
+            commit = "b7f3e9756f3c45527be27bc38840d5a1ba690436",
+            sha256 = "347927fd8de6132099fcdc58e8f7eab7bde4eb2fd424546b9cd4f1c6f8f8bad8",
         )
 
     if not native.existing_rule("rules_jvm_external"):
@@ -142,15 +142,14 @@ def protobuf_deps():
     if not native.existing_rule("io_bazel_rules_kotlin"):
         http_archive(
             name = "io_bazel_rules_kotlin",
-            urls = ["https://github.com/bazelbuild/rules_kotlin/releases/download/v1.7.0-RC-1/rules_kotlin_release.tgz"],
-            sha256 = "68b910730026921814d3a504ccbe9adaac9938983d940e626523e6e4ecfb0355",
+            urls = ["https://github.com/bazelbuild/rules_kotlin/releases/download/v1.8.1/rules_kotlin_release.tgz"],
+            sha256 = "a630cda9fdb4f56cf2dc20a4bf873765c41cf00e9379e8d59cd07b24730f4fde",
         )
 
     if not native.existing_rule("upb"):
-        _github_archive(
+        http_archive(
             name = "upb",
-            repo = "https://github.com/protocolbuffers/upb",
-            commit = "01fed1cc1ba255bf22b49393ba054b8d270e6ba3",
-            sha256 = "387bef0d61094773a4ce7dd1c3d92bb99444155531e00945161ec9cd36e5bfce",
-            patches = ["@com_google_protobuf//build_defs:upb.patch"],
+            url = "https://github.com/protocolbuffers/protobuf/archive/f85a338d79f05938d1725fba3b2c603a8d06462e.zip",
+            strip_prefix = "protobuf-f85a338d79f05938d1725fba3b2c603a8d06462e/upb",
+            sha256 = "cd28ae63e40a146ec1a2d41e96f53e637aaa5d6c746e7120d013aafc65092882",
         )

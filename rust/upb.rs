@@ -30,6 +30,7 @@
 
 //! UPB FFI wrapper code for use by Rust Protobuf.
 
+use crate::__internal::{Private, RawArena, RawMessage};
 use std::alloc;
 use std::alloc::Layout;
 use std::cell::UnsafeCell;
@@ -37,20 +38,11 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
-use std::ptr::NonNull;
+use std::ptr::{self, NonNull};
 use std::slice;
 
 /// See `upb/port/def.inc`.
 const UPB_MALLOC_ALIGN: usize = 8;
-
-/// A UPB-managed pointer to a raw arena.
-pub type RawArena = NonNull<RawArenaData>;
-
-/// The data behind a [`RawArena`]. Do not use this type.
-#[repr(C)]
-pub struct RawArenaData {
-    _data: [u8; 0],
-}
 
 /// A wrapper over a `upb_Arena`.
 ///
@@ -61,13 +53,16 @@ pub struct RawArenaData {
 /// dropped.
 ///
 /// Note that this type is neither `Sync` nor `Send`.
+#[derive(Debug)]
 pub struct Arena {
+    // Safety invariant: this must always be a valid arena
     raw: RawArena,
     _not_sync: PhantomData<UnsafeCell<()>>,
 }
 
 extern "C" {
-    fn upb_Arena_New() -> RawArena;
+    // `Option<NonNull<T: Sized>>` is ABI-compatible with `*mut T`
+    fn upb_Arena_New() -> Option<RawArena>;
     fn upb_Arena_Free(arena: RawArena);
     fn upb_Arena_Malloc(arena: RawArena, size: usize) -> *mut u8;
     fn upb_Arena_Realloc(arena: RawArena, ptr: *mut u8, old: usize, new: usize) -> *mut u8;
@@ -77,7 +72,19 @@ impl Arena {
     /// Allocates a fresh arena.
     #[inline]
     pub fn new() -> Self {
-        Self { raw: unsafe { upb_Arena_New() }, _not_sync: PhantomData }
+        #[inline(never)]
+        #[cold]
+        fn arena_new_failed() -> ! {
+            panic!("Could not create a new UPB arena");
+        }
+
+        // SAFETY:
+        // - `upb_Arena_New` is assumed to be implemented correctly and always sound to
+        //   call; if it returned a non-null pointer, it is a valid arena.
+        unsafe {
+            let Some(raw) = upb_Arena_New() else { arena_new_failed() };
+            Self { raw, _not_sync: PhantomData }
+        }
     }
 
     /// Returns the raw, UPB-managed pointer to the arena.
@@ -90,34 +97,54 @@ impl Arena {
     ///
     /// # Safety
     ///
-    /// `layout`'s alignment must be less than `UPB_MALLOC_ALIGN`.
+    /// - `layout`'s alignment must be less than `UPB_MALLOC_ALIGN`.
     #[inline]
     pub unsafe fn alloc(&self, layout: Layout) -> &mut [MaybeUninit<u8>] {
         debug_assert!(layout.align() <= UPB_MALLOC_ALIGN);
-        let ptr = upb_Arena_Malloc(self.raw, layout.size());
+        // SAFETY: `self.raw` is a valid UPB arena
+        let ptr = unsafe { upb_Arena_Malloc(self.raw, layout.size()) };
         if ptr.is_null() {
             alloc::handle_alloc_error(layout);
         }
 
-        slice::from_raw_parts_mut(ptr.cast(), layout.size())
+        // SAFETY:
+        // - `upb_Arena_Malloc` promises that if the return pointer is non-null, it is
+        //   dereferencable for `size` bytes and has an alignment of `UPB_MALLOC_ALIGN`
+        //   until the arena is destroyed.
+        // - `[MaybeUninit<u8>]` has no alignment requirement, and `ptr` is aligned to a
+        //   `UPB_MALLOC_ALIGN` boundary.
+        unsafe { slice::from_raw_parts_mut(ptr.cast(), layout.size()) }
     }
 
     /// Resizes some memory on the arena.
     ///
     /// # Safety
     ///
-    /// After calling this function, `ptr` is essentially zapped. `old` must
-    /// be the layout `ptr` was allocated with via [`Arena::alloc()`]. `new`'s
-    /// alignment must be less than `UPB_MALLOC_ALIGN`.
+    /// - `ptr` must be the data pointer returned by a previous call to `alloc`
+    ///   or `resize` on `self`.
+    /// - After calling this function, `ptr` is no longer dereferencable - it is
+    ///   zapped.
+    /// - `old` must be the layout `ptr` was allocated with via `alloc` or
+    ///   `realloc`.
+    /// - `new`'s alignment must be less than `UPB_MALLOC_ALIGN`.
     #[inline]
-    pub unsafe fn resize(&self, ptr: *mut u8, old: Layout, new: Layout) -> &[MaybeUninit<u8>] {
+    pub unsafe fn resize(&self, ptr: *mut u8, old: Layout, new: Layout) -> &mut [MaybeUninit<u8>] {
         debug_assert!(new.align() <= UPB_MALLOC_ALIGN);
-        let ptr = upb_Arena_Realloc(self.raw, ptr, old.size(), new.size());
+        // SAFETY:
+        // - `self.raw` is a valid UPB arena
+        // - `ptr` was allocated by a previous call to `alloc` or `realloc` as promised
+        //   by the caller.
+        let ptr = unsafe { upb_Arena_Realloc(self.raw, ptr, old.size(), new.size()) };
         if ptr.is_null() {
             alloc::handle_alloc_error(new);
         }
 
-        slice::from_raw_parts_mut(ptr.cast(), new.size())
+        // SAFETY:
+        // - `upb_Arena_Realloc` promises that if the return pointer is non-null, it is
+        //   dereferencable for the new `size` in bytes until the arena is destroyed.
+        // - `[MaybeUninit<u8>]` has no alignment requirement, and `ptr` is aligned to a
+        //   `UPB_MALLOC_ALIGN` boundary.
+        unsafe { slice::from_raw_parts_mut(ptr.cast(), new.size()) }
     }
 }
 
@@ -142,21 +169,108 @@ pub struct SerializedData {
 }
 
 impl SerializedData {
+    /// Construct `SerializedData` from raw pointers and its owning arena.
+    ///
+    /// # Safety
+    /// - `arena` must be have allocated `data`
+    /// - `data` must be readable for `len` bytes and not mutate while this
+    ///   struct exists
     pub unsafe fn from_raw_parts(arena: Arena, data: NonNull<u8>, len: usize) -> Self {
         SerializedData { _arena: arena, data, len }
+    }
+
+    /// Gets a raw slice pointer.
+    pub fn as_ptr(&self) -> *const [u8] {
+        ptr::slice_from_raw_parts(self.data.as_ptr(), self.len)
     }
 }
 
 impl Deref for SerializedData {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
-        unsafe { slice::from_raw_parts(self.data.as_ptr() as *const _, self.len) }
+        // SAFETY: `data` is valid for `len` bytes as promised by
+        //         the caller of `SerializedData::from_raw_parts`.
+        unsafe { slice::from_raw_parts(self.data.as_ptr(), self.len) }
     }
 }
 
 impl fmt::Debug for SerializedData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self.deref(), f)
+    }
+}
+
+// TODO(b/293919363): Investigate replacing this with direct access to UPB bits.
+pub type BytesPresentMutData<'msg> = crate::vtable::RawVTableOptionalMutatorData<'msg, [u8]>;
+pub type BytesAbsentMutData<'msg> = crate::vtable::RawVTableOptionalMutatorData<'msg, [u8]>;
+pub type InnerBytesMut<'msg> = crate::vtable::RawVTableMutator<'msg, [u8]>;
+pub type InnerPrimitiveMut<'a, T> = crate::vtable::RawVTableMutator<'a, T>;
+
+/// The raw contents of every generated message.
+#[derive(Debug)]
+pub struct MessageInner {
+    pub msg: RawMessage,
+    pub arena: Arena,
+}
+
+/// Mutators that point to their original message use this to do so.
+///
+/// Since UPB expects runtimes to manage their own arenas, this needs to have
+/// access to an `Arena`.
+///
+/// This has two possible designs:
+/// - Store two pointers here, `RawMessage` and `&'msg Arena`. This doesn't
+///   place any restriction on the layout of generated messages and their
+///   mutators. This makes a vtable-based mutator three pointers, which can no
+///   longer be returned in registers on most platforms.
+/// - Store one pointer here, `&'msg MessageInner`, where `MessageInner` stores
+///   a `RawMessage` and an `Arena`. This would require all generated messages
+///   to store `MessageInner`, and since their mutators need to be able to
+///   generate `BytesMut`, would also require `BytesMut` to store a `&'msg
+///   MessageInner` since they can't store an owned `Arena`.
+///
+/// Note: even though this type is `Copy`, it should only be copied by
+/// protobuf internals that can maintain mutation invariants:
+///
+/// - No concurrent mutation for any two fields in a message: this means
+///   mutators cannot be `Send` but are `Sync`.
+/// - If there are multiple accessible `Mut` to a single message at a time, they
+///   must be different fields, and not be in the same oneof. As such, a `Mut`
+///   cannot be `Clone` but *can* reborrow itself with `.as_mut()`, which
+///   converts `&'b mut Mut<'a, T>` to `Mut<'b, T>`.
+#[derive(Clone, Copy, Debug)]
+pub struct MutatorMessageRef<'msg> {
+    msg: RawMessage,
+    arena: &'msg Arena,
+}
+
+impl<'msg> MutatorMessageRef<'msg> {
+    #[doc(hidden)]
+    #[allow(clippy::needless_pass_by_ref_mut)] // Sound construction requires mutable access.
+    pub fn new(_private: Private, msg: &'msg mut MessageInner) -> Self {
+        MutatorMessageRef { msg: msg.msg, arena: &msg.arena }
+    }
+
+    pub fn msg(&self) -> RawMessage {
+        self.msg
+    }
+}
+
+pub fn copy_bytes_in_arena_if_needed_by_runtime<'a>(
+    msg_ref: MutatorMessageRef<'a>,
+    val: &'a [u8],
+) -> &'a [u8] {
+    // SAFETY: the alignment of `[u8]` is less than `UPB_MALLOC_ALIGN`.
+    let new_alloc = unsafe { msg_ref.arena.alloc(Layout::for_value(val)) };
+    debug_assert_eq!(new_alloc.len(), val.len());
+
+    let start: *mut u8 = new_alloc.as_mut_ptr().cast();
+    // SAFETY:
+    // - `new_alloc` is writeable for `val.len()` bytes.
+    // - After the copy, `new_alloc` is initialized for `val.len()` bytes.
+    unsafe {
+        val.as_ptr().copy_to_nonoverlapping(start, val.len());
+        &*(new_alloc as *mut _ as *mut [u8])
     }
 }
 

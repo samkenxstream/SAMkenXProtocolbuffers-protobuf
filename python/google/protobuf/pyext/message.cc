@@ -2045,25 +2045,26 @@ static PyObject* RichCompare(CMessage* self, PyObject* other, int opid) {
     Py_INCREF(Py_NotImplemented);
     return Py_NotImplemented;
   }
-  bool equals = true;
-  // If other is not a message, it cannot be equal.
+  // If other is not a message, this implementation doesn't know how to perform
+  // comparisons.
   if (!PyObject_TypeCheck(other, CMessage_Type)) {
+    Py_INCREF(Py_NotImplemented);
+    return Py_NotImplemented;
+  }
+  // Otherwise, we have a CMessage whose message we can inspect.
+  bool equals = true;
+  const google::protobuf::Message* other_message =
+      reinterpret_cast<CMessage*>(other)->message;
+  // If messages don't have the same descriptors, they are not equal.
+  if (equals &&
+      self->message->GetDescriptor() != other_message->GetDescriptor()) {
     equals = false;
-  } else {
-    // Otherwise, we have a CMessage whose message we can inspect.
-    const google::protobuf::Message* other_message =
-        reinterpret_cast<CMessage*>(other)->message;
-    // If messages don't have the same descriptors, they are not equal.
-    if (equals &&
-        self->message->GetDescriptor() != other_message->GetDescriptor()) {
-      equals = false;
-    }
-    // Check the message contents.
-    if (equals &&
-        !google::protobuf::util::MessageDifferencer::Equals(
-            *self->message, *reinterpret_cast<CMessage*>(other)->message)) {
-      equals = false;
-    }
+  }
+  // Check the message contents.
+  if (equals &&
+      !google::protobuf::util::MessageDifferencer::Equals(
+          *self->message, *reinterpret_cast<CMessage*>(other)->message)) {
+    equals = false;
   }
 
   if (equals ^ (opid == Py_EQ)) {
@@ -2368,6 +2369,10 @@ static PyObject* GetExtensionDict(CMessage* self, void *closure) {
 }
 
 static PyObject* GetUnknownFields(CMessage* self) {
+  PyErr_Warn(nullptr,
+             "message.UnknownFields() is deprecated. Please use the "
+             "add one feature unknown_fields.UnknownFieldSet(message) in "
+             "unknown_fields.py instead.");
   if (self->unknown_field_set == nullptr) {
     self->unknown_field_set = unknown_fields::NewPyUnknownFields(self);
   } else {

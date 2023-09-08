@@ -305,7 +305,7 @@ bool Generator::Generate(const FileDescriptor* file,
     printer_->Print("if _descriptor._USE_C_DESCRIPTORS == False:\n");
     printer_->Indent();
     // Create enums before message descriptors
-    PrintAllNestedEnumsInFile();
+    PrintAllEnumsInFile();
     PrintMessageDescriptors();
     FixForeignFieldsInDescriptors();
     printer_->Outdent();
@@ -382,6 +382,7 @@ void Generator::PrintTopBoilerplate() const {
 
 // Prints Python imports for all modules imported by |file|.
 void Generator::PrintImports() const {
+  bool has_importlib = false;
   for (int i = 0; i < file_->dependency_count(); ++i) {
     absl::string_view filename = file_->dependency(i)->name();
 
@@ -396,7 +397,10 @@ void Generator::PrintImports() const {
       // module name and import it using importlib. Otherwise the usual kind of
       // import statement would result in a syntax error from the presence of
       // the keyword.
-      printer_->Print("import importlib\n");
+      if (has_importlib == false) {
+        printer_->Print("import importlib\n");
+        has_importlib = true;
+      }
       printer_->Print("$alias$ = importlib.import_module('$name$')\n", "alias",
                       module_alias, "name", module_name);
     } else {
@@ -499,7 +503,10 @@ void Generator::PrintFileDescriptor() const {
 }
 
 // Prints all enums contained in all message types in |file|.
-void Generator::PrintAllNestedEnumsInFile() const {
+void Generator::PrintAllEnumsInFile() const {
+  for (int i = 0; i < file_->enum_type_count(); ++i) {
+    PrintEnum(*file_->enum_type(i));
+  }
   for (int i = 0; i < file_->message_type_count(); ++i) {
     PrintNestedEnums(*file_->message_type(i));
   }
@@ -1028,7 +1035,7 @@ void Generator::PrintEnumValueDescriptor(
 // Returns a CEscaped string of serialized_options.
 std::string Generator::OptionsValue(
     absl::string_view serialized_options) const {
-  if (serialized_options.length() == 0 || GeneratingDescriptorProto()) {
+  if (serialized_options.length() == 0) {
     return "None";
   } else {
     return absl::StrCat("b'", absl::CEscape(serialized_options), "'");
@@ -1194,10 +1201,18 @@ void PrintDescriptorOptionsFixingCode(absl::string_view descriptor,
                                       io::Printer* printer) {
   // Reset the _options to None thus DescriptorBase.GetOptions() can
   // parse _options again after extensions are registered.
+  size_t dot_pos = descriptor.find('.');
+  std::string descriptor_name;
+  if (dot_pos == std::string::npos) {
+    descriptor_name = absl::StrCat("_globals['", descriptor, "']");
+  } else {
+    descriptor_name = absl::StrCat("_globals['", descriptor.substr(0, dot_pos),
+                                   "']", descriptor.substr(dot_pos));
+  }
   printer->Print(
-      "$descriptor$._options = None\n"
-      "$descriptor$._serialized_options = $serialized_value$\n",
-      "descriptor", descriptor, "serialized_value", options);
+      "$descriptor_name$._options = None\n"
+      "$descriptor_name$._serialized_options = $serialized_value$\n",
+      "descriptor_name", descriptor_name, "serialized_value", options);
 }
 }  // namespace
 

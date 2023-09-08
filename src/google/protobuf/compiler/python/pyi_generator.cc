@@ -151,41 +151,50 @@ void CheckImportModules(const Descriptor* descriptor,
 }
 
 void PyiGenerator::PrintImportForDescriptor(
-    const FileDescriptor& desc,
-    absl::flat_hash_set<std::string>* seen_aliases) const {
+    const FileDescriptor& desc, absl::flat_hash_set<std::string>* seen_aliases,
+    bool* has_importlib) const {
   const std::string& filename = desc.name();
   std::string module_name_owned = StrippedModuleName(filename);
   absl::string_view module_name(module_name_owned);
   size_t last_dot_pos = module_name.rfind('.');
-  std::string import_statement;
-  if (last_dot_pos == std::string::npos) {
-    import_statement = absl::StrCat("import ", module_name);
-  } else {
-    import_statement =
-        absl::StrCat("from ", module_name.substr(0, last_dot_pos), " import ",
-                     module_name.substr(last_dot_pos + 1));
-    module_name = module_name.substr(last_dot_pos + 1);
-  }
-  std::string alias = absl::StrCat("_", module_name);
+  std::string alias = absl::StrCat("_", module_name.substr(last_dot_pos + 1));
   // Generate a unique alias by adding _1 suffixes until we get an unused alias.
   while (seen_aliases->find(alias) != seen_aliases->end()) {
     absl::StrAppend(&alias, "_1");
   }
-  printer_->Print("$statement$ as $alias$\n", "statement",
-                  import_statement, "alias", alias);
-  import_map_[filename] = alias;
-  seen_aliases->insert(alias);
+  if (ContainsPythonKeyword(module_name)) {
+    if (*has_importlib == false) {
+      printer_->Print("import importlib\n");
+      *has_importlib = true;
+    }
+    printer_->Print("$alias$ = importlib.import_module('$name$')\n", "alias",
+                    alias, "name", module_name);
+  } else {
+    std::string import_statement;
+    if (last_dot_pos == std::string::npos) {
+      import_statement = absl::StrCat("import ", module_name);
+    } else {
+      import_statement =
+          absl::StrCat("from ", module_name.substr(0, last_dot_pos), " import ",
+                       module_name.substr(last_dot_pos + 1));
+    }
+    printer_->Print("$statement$ as $alias$\n", "statement", import_statement,
+                    "alias", alias);
+    import_map_[filename] = alias;
+    seen_aliases->insert(alias);
+  }
 }
 
 void PyiGenerator::PrintImports() const {
   // Prints imported dependent _pb2 files.
   absl::flat_hash_set<std::string> seen_aliases;
+  bool has_importlib = false;
   for (int i = 0; i < file_->dependency_count(); ++i) {
     const FileDescriptor* dep = file_->dependency(i);
-    PrintImportForDescriptor(*dep, &seen_aliases);
+    PrintImportForDescriptor(*dep, &seen_aliases, &has_importlib);
     for (int j = 0; j < dep->public_dependency_count(); ++j) {
-      PrintImportForDescriptor(
-          *dep->public_dependency(j), &seen_aliases);
+      PrintImportForDescriptor(*dep->public_dependency(j), &seen_aliases,
+                               &has_importlib);
     }
   }
 
@@ -274,14 +283,14 @@ void PyiGenerator::PrintImports() const {
     std::string module_name = StrippedModuleName(public_dep->name());
     // Top level messages in public imports
     for (int i = 0; i < public_dep->message_type_count(); ++i) {
-      printer_->Print("from $module$ import $message_class$\n", "module",
-                      module_name, "message_class",
-                      public_dep->message_type(i)->name());
+      printer_->Print(
+          "from $module$ import $message_class$ as $message_class$\n", "module",
+          module_name, "message_class", public_dep->message_type(i)->name());
     }
     // Top level enums for public imports
     for (int i = 0; i < public_dep->enum_type_count(); ++i) {
-      printer_->Print("from $module$ import $enum_class$\n", "module",
-                      module_name, "enum_class",
+      printer_->Print("from $module$ import $enum_class$ as $enum_class$\n",
+                      "module", module_name, "enum_class",
                       public_dep->enum_type(i)->name());
     }
   }
@@ -300,7 +309,7 @@ void PyiGenerator::PrintEnum(const EnumDescriptor& enum_descriptor) const {
   std::string enum_name = enum_descriptor.name();
   printer_->Print(
       "class $enum_name$(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):\n"
-      "    __slots__ = []\n",
+      "    __slots__ = ()\n",
       "enum_name", enum_name);
   Annotate("enum_name", &enum_descriptor);
   printer_->Indent();
@@ -410,21 +419,20 @@ void PyiGenerator::PrintMessage(
   printer_->Indent();
 
   // Prints slots
-  printer_->Print("__slots__ = [", "class_name", class_name);
-  bool first_item = true;
+  printer_->Print("__slots__ = (");
+  int items_printed = 0;
   for (int i = 0; i < message_descriptor.field_count(); ++i) {
     const FieldDescriptor* field_des = message_descriptor.field(i);
     if (IsPythonKeyword(field_des->name())) {
       continue;
     }
-    if (first_item) {
-      first_item = false;
-    } else {
+    if (items_printed > 0) {
       printer_->Print(", ");
     }
+    ++items_printed;
     printer_->Print("\"$field_name$\"", "field_name", field_des->name());
   }
-  printer_->Print("]\n");
+  printer_->Print(items_printed == 1 ? ",)\n" : ")\n");
 
   // Prints Extensions for extendable messages
   if (message_descriptor.extension_range_count() > 0) {
